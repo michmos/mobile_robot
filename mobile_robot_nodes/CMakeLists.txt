@@ -16,6 +16,10 @@ add_executable(control_node src/mockPubSub.cpp)
 target_link_libraries(control_node PUBLIC rclcpp::rclcpp ${std_msgs_TARGETS})
 
 install(TARGETS control_node DESTINATION lib/${PROJECT_NAME})
+install(DIRECTORY
+  launch
+  DESTINATION share/${PROJECT_NAME}/
+)
 
 
 
