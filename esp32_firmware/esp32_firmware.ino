@@ -18,10 +18,11 @@ rcl_allocator_t allocator;
 rcl_node_t node;
 rcl_timer_t timer;
 
-#define ADC_PIN 4
 #define ENA_PIN 23
 #define IN1_PIN 19
 #define IN2_PIN 21
+#define ULTRASONIC_TRIGGER_PIN 16
+#define ULTRASONIC_ECHO_PIN 17
 
 #define RCCHECK(fn) \
   { \
@@ -41,14 +42,24 @@ void error_loop() {
   }
 }
 
+// TODO: maybe this shouldn't happen inside the timer
 void timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
   RCLC_UNUSED(last_call_time);
 
-  msg.data = analogRead(ADC_PIN);
-  // publish
-  if (timer != NULL) {
-    RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
+  // trigger sensor
+  digitalWrite(ULTRASONIC_TRIGGER_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(ULTRASONIC_TRIGGER_PIN, LOW);
+
+  // measure the duration until echo
+  uint16_t duration = pulseIn(ULTRASONIC_ECHO_PIN, HIGH, 38000);
+  if (duration == 0) {
+    // 0 in case of timeout
+    return;
   }
+  uint16_t distance = (duration * 0.034) / 2;
+  msg.data = distance;
+  RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
 }
 
 void subscriber_callback(const void *subMsg) {
@@ -63,22 +74,21 @@ void subscriber_callback(const void *subMsg) {
 void setup() {
   set_microros_transports();
 
-
-  pinMode(ADC_PIN, INPUT);
-
+  // motor setup
   pinMode(ENA_PIN, OUTPUT);
   pinMode(IN1_PIN, OUTPUT);
   pinMode(IN2_PIN, OUTPUT);
-
-  // turn motor off
+  // // turn motor off
   digitalWrite(ENA_PIN, LOW);
   digitalWrite(IN1_PIN, LOW);
   digitalWrite(IN2_PIN, LOW);
-
-  analogReadResolution(12);
-
+  // // pwm setup
   ledcSetup(1, 5000, 8);
   ledcAttachPin(ENA_PIN, 1);
+
+  // ultrasonic setup
+  pinMode(ULTRASONIC_TRIGGER_PIN, OUTPUT);
+  pinMode(ULTRASONIC_ECHO_PIN, INPUT);
 
   delay(2000);
 
@@ -95,7 +105,7 @@ void setup() {
     &publisher,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
-    "adc_value"));
+    "ultra_sonic_data"));
 
   // create subscriber
   RCCHECK(rclc_subscription_init_default(
@@ -106,7 +116,7 @@ void setup() {
 
 
   // create timer,
-  const unsigned int timer_timeout = 50;
+  const unsigned int timer_timeout = 100;
   RCCHECK(rclc_timer_init_default(
     &timer,
     &support,
@@ -118,6 +128,7 @@ void setup() {
   RCCHECK(rclc_executor_add_timer(&executor, &timer));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &subMessage, &subscriber_callback, ON_NEW_DATA));
 
+  // TODO: maybe don't set motor to max speed here but just wait for input from motor control
   // set motor to max speed
   digitalWrite(ENA_PIN, HIGH);
   // turn motor on
