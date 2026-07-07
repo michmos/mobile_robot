@@ -64,8 +64,8 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
 
 void subscriber_callback(const void *subMsg) {
   const std_msgs__msg__Int32 *message = (const std_msgs__msg__Int32 *)subMsg;
-  // receives message between 0 - 100
-  uint8_t dutyCycle = map(message->data, 0, 100, 0, 255);
+  // receives message between 0 - 65535
+  uint16_t dutyCycle = message->data;
   if (message) {
     ledcWrite(1, dutyCycle);
   }
@@ -83,7 +83,7 @@ void setup() {
   digitalWrite(IN1_PIN, LOW);
   digitalWrite(IN2_PIN, LOW);
   // // pwm setup
-  ledcSetup(1, 5000, 8);
+  ledcSetup(1, 1000, 16);
   ledcAttachPin(ENA_PIN, 1);
 
   // ultrasonic setup
