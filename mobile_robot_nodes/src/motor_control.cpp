@@ -1,4 +1,5 @@
 #include "std_msgs/msg/int32.hpp"
+#include "std_msgs/msg/u_int16.hpp"
 #include <chrono>
 #include <cstdint>
 #include <rclcpp/create_publisher.hpp>
@@ -6,17 +7,17 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/subscription.hpp>
 #include <rclcpp/utilities.hpp>
-#include <std_msgs/msg/int32.h>
+#include <std_msgs/msg/u_int16.hpp>
 
-uint16_t getWallDistance(uint32_t data) { return data; }
-
+using UInt16 = std_msgs::msg::UInt16;
+using Int32 = std_msgs::msg::Int32;
 
 class MotorControl : public rclcpp::Node {
 private:
-  rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr sub_;
+  rclcpp::Subscription<UInt16>::SharedPtr sub_;
   // TODO: change publisher message type to something with: value,
   // maxValue, direction and that for both wheels
-  rclcpp::Publisher<std_msgs::msg::Int32>::SharedPtr pub_;
+  rclcpp::Publisher<Int32>::SharedPtr pub_;
   uint32_t currentDutyCycle_;
   bool inSpeedTransition_;
 
@@ -25,35 +26,33 @@ public:
       : Node("motor_controler"), currentDutyCycle_(0),
         inSpeedTransition_(false) {
 
-    auto ultraSonicData_subCallback =
-        [this](std_msgs::msg::Int32::UniquePtr msg) {
-          RCLCPP_INFO_STREAM(this->get_logger(),
-                             "received distance: " << msg->data);
+    auto subCallback = [this](UInt16::UniquePtr msg) {
+      RCLCPP_INFO_STREAM(this->get_logger(),
+                         "received distance: " << msg->data);
 
-          // no adaptions to speed during speed transitions
-          if (inSpeedTransition_) {
-            return;
-          }
+      // no adaptions to speed during speed transitions
+      if (inSpeedTransition_) {
+        return;
+      }
 
-          uint16_t wallDistance = getWallDistance(msg->data);
-          if (wallDistance < 15) {
-            transitionSpeedTo(0);
+      uint16_t wallDistance = msg->data;
+      if (wallDistance < 15) {
+        transitionSpeedTo(0);
 
-          } else {
-            transitionSpeedTo(65535);
-          }
+      } else {
+        transitionSpeedTo(65535);
+      }
 
-          // publish message
-          std_msgs::msg::Int32 newMessage;
-          newMessage.data = currentDutyCycle_;
-          pub_->publish(std::make_unique<std_msgs::msg::Int32>(newMessage));
-        };
+      // publish message
+      Int32 newMessage;
+      newMessage.data = currentDutyCycle_;
+      pub_->publish(std::make_unique<Int32>(newMessage));
+    };
 
-    sub_ = rclcpp::create_subscription<std_msgs::msg::Int32>(
-        *this, "ultra_sonic_data", 10, ultraSonicData_subCallback);
+    sub_ =
+        rclcpp::create_subscription<UInt16>(*this, "distance", 10, subCallback);
 
-    pub_ = rclcpp::create_publisher<std_msgs::msg::Int32>(*this, "pwm_control",
-                                                          10);
+    pub_ = rclcpp::create_publisher<Int32>(*this, "pwm_control", 10);
   }
 
   // TODO: probably shouldn't sleep here
@@ -98,9 +97,9 @@ public:
     }
 
     currentDutyCycle_ = newSpeed;
-    std_msgs::msg::Int32 msg;
+    Int32 msg;
     msg.data = newSpeed;
-    pub_->publish(std::make_unique<std_msgs::msg::Int32>(std::move(msg)));
+    pub_->publish(std::make_unique<Int32>(std::move(msg)));
     RCLCPP_INFO_STREAM(this->get_logger(), "publishing speed: " << msg.data);
   }
 };

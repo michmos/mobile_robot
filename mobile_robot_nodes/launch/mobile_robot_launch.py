@@ -13,6 +13,11 @@ def generate_launch_description():
             name='motor_controler'
         ),
         Node(
+            package='mobile_robot',
+            executable='perception_node',
+            name='perception'
+        ),
+        Node(
             package='micro_ros_agent',
             executable='micro_ros_agent',
             arguments=['serial', '--dev', '/dev/ttyUSB0', '-b', '115200']

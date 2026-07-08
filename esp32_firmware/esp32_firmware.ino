@@ -7,10 +7,10 @@
 #include <rclc/executor.h>
 
 #include <std_msgs/msg/int32.h>
+#include <std_msgs/msg/u_int16.h>
 
 rcl_publisher_t publisher;
 rcl_subscription_t subscriber;
-std_msgs__msg__Int32 msg;
 std_msgs__msg__Int32 subMessage;
 rclc_executor_t executor;
 rclc_support_t support;
@@ -57,8 +57,8 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
     // 0 in case of timeout
     return;
   }
-  uint16_t distance = (duration * 0.034) / 2;
-  msg.data = distance;
+  std_msgs__msg__UInt16 msg;
+  msg.data = duration;
   RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
 }
 
@@ -98,14 +98,14 @@ void setup() {
   RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
 
   // create node
-  RCCHECK(rclc_node_init_default(&node, "micro_ros_esp32_node", "", &support));
+  RCCHECK(rclc_node_init_default(&node, "esp32", "", &support));
 
   // create publisher
   RCCHECK(rclc_publisher_init_default(
     &publisher,
     &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
-    "ultra_sonic_data"));
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt16),
+    "ultrasonic_raw"));
 
   // create subscriber
   RCCHECK(rclc_subscription_init_default(

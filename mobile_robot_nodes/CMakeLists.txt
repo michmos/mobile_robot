@@ -15,7 +15,11 @@ find_package(rclcpp REQUIRED)
 add_executable(control_node src/motor_control.cpp)
 target_link_libraries(control_node PUBLIC rclcpp::rclcpp ${std_msgs_TARGETS})
 
+add_executable(perception_node src/perception.cpp)
+target_link_libraries(perception_node PUBLIC rclcpp::rclcpp ${std_msgs_TARGETS})
+
 install(TARGETS control_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS perception_node DESTINATION lib/${PROJECT_NAME})
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}/
