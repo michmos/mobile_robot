@@ -6,12 +6,12 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 
-#include <std_msgs/msg/int32.h>
+#include <std_msgs/msg/int16.h>
 #include <std_msgs/msg/u_int16.h>
 
 rcl_publisher_t publisher;
 rcl_subscription_t subscriber;
-std_msgs__msg__Int32 subMessage;
+std_msgs__msg__Int16 subMessage;
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
@@ -63,9 +63,20 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
 }
 
 void subscriber_callback(const void *subMsg) {
-  const std_msgs__msg__Int32 *message = (const std_msgs__msg__Int32 *)subMsg;
+  const std_msgs__msg__Int16 *message = (const std_msgs__msg__Int16 *)subMsg;
   // receives message between 0 - 65535
-  uint16_t dutyCycle = message->data;
+  uint8_t direction = (message->data < 0) ? -1 : 1;
+  uint16_t dutyCycle = map(abs(message->data), 0, INT16_MAX, 0, UINT16_MAX);
+
+  // handle direction
+  if (direction < 0) {
+    digitalWrite(IN1_PIN, HIGH);
+    digitalWrite(IN2_PIN, LOW);
+  } else {
+    digitalWrite(IN1_PIN, LOW);
+    digitalWrite(IN2_PIN, HIGH);
+  }
+
   if (message) {
     ledcWrite(1, dutyCycle);
   }
@@ -111,7 +122,7 @@ void setup() {
   RCCHECK(rclc_subscription_init_default(
     &subscriber,
     &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int16),
     "pwm_control"));
 
 
