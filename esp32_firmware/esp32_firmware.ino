@@ -18,15 +18,15 @@ rcl_node_t node;
 rcl_publisher_t publisher_ultrasonic;
 rcl_publisher_t publisher_encoder;
 rcl_subscription_t subscriber;
-std_msgs__msg__Int16 subMessage;
+std_msgs__msg__Int16 sub_msg;
 
 rcl_timer_t timer_ultrasonic;
 rcl_timer_t timer_rpm;
 
 int8_t direction = 1;  // 1 forward, -1 backward
-unsigned long pulseCount = 0;
-const uint8_t encoderResolution = 12;
-const uint8_t reducerRatio = 40;
+unsigned long pulse_count = 0;
+const uint8_t encoder_resolution = 12;
+const uint8_t reducer_ratio = 40;
 
 // Motor driver
 #define ENA_PIN 5
@@ -36,7 +36,6 @@ const uint8_t reducerRatio = 40;
 // Motor encoder
 #define ENCODERA_1 18
 #define ENCODERB_1 19
-
 
 // ultrasonic sensor
 #define ULTRASONIC_TRIGGER_PIN 2
@@ -69,23 +68,23 @@ void on_encoder_a1_raise() {
   } else {
     direction = -1;
   }
-  pulseCount++;
+  pulse_count++;
 }
 
 // TODO: maybe use actual time difference (last_call_time)
 void publish_rpm(rcl_timer_t *timer, int64_t last_call_time) {
   RCLC_UNUSED(last_call_time);
   
-  unsigned long snaps = pulseCount;
+  unsigned long snaps = pulse_count;
   int8_t dir = direction;
-  static unsigned long lastPulseCount = 0;
+  static unsigned long last_pulse_count = 0;
 
-  // this substraction even works when pulseCount overflows (since the result
+  // this substraction even works when pulse_count overflows (since the result
   // is casted to unsigned again)
-  unsigned long pulseDiff = snaps - lastPulseCount;
-  lastPulseCount = snaps;
+  unsigned long pulse_diff = snaps - last_pulse_count;
+  last_pulse_count = snaps;
 
-  uint16_t RPM = (pulseDiff * 600) / (reducerRatio * encoderResolution);
+  uint16_t RPM = (pulse_diff * 600) / (reducer_ratio * encoder_resolution);
   std_msgs__msg__Int16 msg;
   msg.data = RPM * dir;
   RCSOFTCHECK(rcl_publish(&publisher_encoder, &msg, NULL));
@@ -195,8 +194,6 @@ void setup() {
     RCL_MS_TO_NS(100),
     publish_ultrasonic));
 
-  // TODO: maybe reuse same timer instead
-
   // create timer to publish encoder data
   RCCHECK(rclc_timer_init_default(
     &timer_rpm,
@@ -208,7 +205,7 @@ void setup() {
   RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
   RCCHECK(rclc_executor_add_timer(&executor, &timer_ultrasonic));
   RCCHECK(rclc_executor_add_timer(&executor, &timer_rpm));
-  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &subMessage, &subscriber_callback, ON_NEW_DATA));
+  RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &sub_msg, &subscriber_callback, ON_NEW_DATA));
 }
 
 void loop() {
