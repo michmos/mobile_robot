@@ -73,21 +73,24 @@ void on_encoder_a1_raise() {
 }
 
 // TODO: maybe use actual time difference (last_call_time)
-// TODO: reset pulse count at some point
-// TODO: does pulseCount need to be atomic?
 void publish_rpm(rcl_timer_t *timer, int64_t last_call_time) {
   RCLC_UNUSED(last_call_time);
+  
+  unsigned long snaps = pulseCount;
+  int8_t dir = direction;
   static unsigned long lastPulseCount = 0;
-  unsigned long pulseDiff = pulseCount - lastPulseCount;
-  lastPulseCount = pulseCount;
+
+  // this substraction even works when pulseCount overflows (since the result
+  // is casted to unsigned again)
+  unsigned long pulseDiff = snaps - lastPulseCount;
+  lastPulseCount = snaps;
 
   uint16_t RPM = (pulseDiff * 600) / (reducerRatio * encoderResolution);
   std_msgs__msg__Int16 msg;
-  msg.data = RPM * direction;
+  msg.data = RPM * dir;
   RCSOFTCHECK(rcl_publish(&publisher_encoder, &msg, NULL));
 }
 
-// TODO: maybe this shouldn't happen inside the timer
 void publish_ultrasonic(rcl_timer_t *timer, int64_t last_call_time) {
   RCLC_UNUSED(last_call_time);
 
