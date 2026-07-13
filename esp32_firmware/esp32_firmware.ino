@@ -9,38 +9,6 @@
 #include <std_msgs/msg/int16.h>
 #include <std_msgs/msg/u_int16.h>
 
-rclc_support_t support;
-rcl_allocator_t allocator;
-rclc_executor_t executor;
-
-rcl_node_t node;
-
-rcl_publisher_t publisher_ultrasonic;
-rcl_publisher_t publisher_encoder;
-rcl_subscription_t subscriber;
-std_msgs__msg__Int16 sub_msg;
-
-rcl_timer_t timer_ultrasonic;
-rcl_timer_t timer_rpm;
-
-int8_t direction = 1;  // 1 forward, -1 backward
-unsigned long pulse_count = 0;
-const uint8_t encoder_resolution = 12;
-const uint8_t reducer_ratio = 40;
-
-// Motor driver
-#define ENA_PIN 5
-#define IN1_PIN 16
-#define IN2_PIN 17
-
-// Motor encoder
-#define ENCODERA_1 18
-#define ENCODERB_1 19
-
-// ultrasonic sensor
-#define ULTRASONIC_TRIGGER_PIN 2
-#define ULTRASONIC_ECHO_PIN 4
-
 #define RCCHECK(fn) \
   do { \
     rcl_ret_t temp_rc = fn; \
@@ -59,6 +27,42 @@ void error_loop() {
   }
 }
 
+rclc_support_t support;
+rcl_allocator_t allocator;
+rclc_executor_t executor;
+
+rcl_node_t node;
+
+rcl_publisher_t publisher_ultrasonic;
+rcl_publisher_t publisher_encoder;
+rcl_subscription_t subscriber;
+std_msgs__msg__Int16 sub_msg;
+
+rcl_timer_t timer_ultrasonic;
+rcl_timer_t timer_rpm;
+
+int8_t direction = 1;  // 1 forward, -1 backward
+unsigned long g_pulse_count = 0;
+const uint8_t k_encoder_resolution = 12;
+const uint8_t k_reducer_ratio = 40;
+
+
+//////////////////////////////////////////////////////////////////////////////////
+// Pins
+//////////////////////////////////////////////////////////////////////////////////
+// Motor driver
+#define ENA_PIN 5
+#define IN1_PIN 16
+#define IN2_PIN 17
+
+// Motor encoder
+#define ENCODERA_1 18
+#define ENCODERB_1 19
+
+// ultrasonic sensor
+#define ULTRASONIC_TRIGGER_PIN 2
+#define ULTRASONIC_ECHO_PIN 4
+
 //////////////////////////////////////////////////////////////////////////////////
 // Timer Callbacks
 //////////////////////////////////////////////////////////////////////////////////
@@ -68,23 +72,23 @@ void on_encoder_a1_raise() {
   } else {
     direction = -1;
   }
-  pulse_count++;
+  g_pulse_count++;
 }
 
 // TODO: maybe use actual time difference (last_call_time)
 void publish_rpm(rcl_timer_t *timer, int64_t last_call_time) {
   RCLC_UNUSED(last_call_time);
   
-  unsigned long snaps = pulse_count;
+  unsigned long snaps = g_pulse_count;
   int8_t dir = direction;
   static unsigned long last_pulse_count = 0;
 
-  // this substraction even works when pulse_count overflows (since the result
+  // this substraction even works when g_pulse_count overflows (since the result
   // is casted to unsigned again)
   unsigned long pulse_diff = snaps - last_pulse_count;
   last_pulse_count = snaps;
 
-  uint16_t RPM = (pulse_diff * 600) / (reducer_ratio * encoder_resolution);
+  uint16_t RPM = (pulse_diff * 600) / (k_reducer_ratio * k_encoder_resolution);
   std_msgs__msg__Int16 msg;
   msg.data = RPM * dir;
   RCSOFTCHECK(rcl_publish(&publisher_encoder, &msg, NULL));
