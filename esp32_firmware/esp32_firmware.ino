@@ -9,32 +9,50 @@
 #include <std_msgs/msg/int16.h>
 #include <std_msgs/msg/u_int16.h>
 
-rcl_publisher_t publisher;
-rcl_subscription_t subscriber;
-std_msgs__msg__Int16 subMessage;
-rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
-rcl_node_t node;
-rcl_timer_t timer;
+rclc_executor_t executor;
 
-#define ENA_PIN 23
-#define IN1_PIN 19
-#define IN2_PIN 21
-#define ULTRASONIC_TRIGGER_PIN 16
-#define ULTRASONIC_ECHO_PIN 17
+rcl_node_t node;
+
+rcl_publisher_t publisher_ultrasonic;
+rcl_publisher_t publisher_encoder;
+rcl_subscription_t subscriber;
+std_msgs__msg__Int16 subMessage;
+
+rcl_timer_t timer_ultrasonic;
+rcl_timer_t timer_rpm;
+
+int8_t direction = 1;  // 1 forward, -1 backward
+unsigned long pulseCount = 0;
+const uint8_t encoderResolution = 12;
+const uint8_t reducerRatio = 40;
+
+// Motor driver
+#define ENA_PIN 5
+#define IN1_PIN 16
+#define IN2_PIN 17
+
+// Motor encoder
+#define ENCODERA_1 18
+#define ENCODERB_1 19
+
+
+// ultrasonic sensor
+#define ULTRASONIC_TRIGGER_PIN 2
+#define ULTRASONIC_ECHO_PIN 4
 
 #define RCCHECK(fn) \
-  { \
+  do { \
     rcl_ret_t temp_rc = fn; \
     if ((temp_rc != RCL_RET_OK)) { error_loop(); } \
-  }
+  } while(0)
+
 #define RCSOFTCHECK(fn) \
   { \
     rcl_ret_t temp_rc = fn; \
     if ((temp_rc != RCL_RET_OK)) {} \
   }
-
 
 void error_loop() {
   while (1) {
@@ -42,8 +60,35 @@ void error_loop() {
   }
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+// Timer Callbacks
+//////////////////////////////////////////////////////////////////////////////////
+void on_encoder_a1_raise() {
+  if (digitalRead(ENCODERB_1) == LOW) {
+    direction = 1;
+  } else {
+    direction = -1;
+  }
+  pulseCount++;
+}
+
+// TODO: maybe use actual time difference (last_call_time)
+// TODO: reset pulse count at some point
+// TODO: does pulseCount need to be atomic?
+void publish_rpm(rcl_timer_t *timer, int64_t last_call_time) {
+  RCLC_UNUSED(last_call_time);
+  static unsigned long lastPulseCount = 0;
+  unsigned long pulseDiff = pulseCount - lastPulseCount;
+  lastPulseCount = pulseCount;
+
+  uint16_t RPM = (pulseDiff * 600) / (reducerRatio * encoderResolution);
+  std_msgs__msg__Int16 msg;
+  msg.data = RPM * direction;
+  RCSOFTCHECK(rcl_publish(&publisher_encoder, &msg, NULL));
+}
+
 // TODO: maybe this shouldn't happen inside the timer
-void timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
+void publish_ultrasonic(rcl_timer_t *timer, int64_t last_call_time) {
   RCLC_UNUSED(last_call_time);
 
   // trigger sensor
@@ -59,13 +104,16 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time) {
   }
   std_msgs__msg__UInt16 msg;
   msg.data = duration;
-  RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
+  RCSOFTCHECK(rcl_publish(&publisher_ultrasonic, &msg, NULL));
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+// Subscriptions
+//////////////////////////////////////////////////////////////////////////////////
 void subscriber_callback(const void *subMsg) {
   const std_msgs__msg__Int16 *message = (const std_msgs__msg__Int16 *)subMsg;
-  // receives message between 0 - 65535
-  uint8_t direction = (message->data < 0) ? -1 : 1;
+
+  int8_t direction = (message->data < 0) ? -1 : 1;
   uint16_t dutyCycle = map(abs(message->data), 0, INT16_MAX, 0, UINT16_MAX);
 
   // handle direction
@@ -77,11 +125,12 @@ void subscriber_callback(const void *subMsg) {
     digitalWrite(IN2_PIN, HIGH);
   }
 
-  if (message) {
-    ledcWrite(1, dutyCycle);
-  }
+  ledcWrite(1, dutyCycle);
 }
 
+//////////////////////////////////////////////////////////////////////////////////
+// Main
+//////////////////////////////////////////////////////////////////////////////////
 void setup() {
   set_microros_transports();
 
@@ -89,13 +138,18 @@ void setup() {
   pinMode(ENA_PIN, OUTPUT);
   pinMode(IN1_PIN, OUTPUT);
   pinMode(IN2_PIN, OUTPUT);
-  // // turn motor off
+  // turn motor off
   digitalWrite(ENA_PIN, LOW);
   digitalWrite(IN1_PIN, LOW);
   digitalWrite(IN2_PIN, LOW);
-  // // pwm setup
+  // pwm setup
   ledcSetup(1, 1000, 16);
   ledcAttachPin(ENA_PIN, 1);
+
+  // encoder setup
+  pinMode(ENCODERA_1, INPUT_PULLUP);
+  pinMode(ENCODERB_1, INPUT_PULLUP);
+  attachInterrupt(ENCODERA_1, on_encoder_a1_raise, RISING);
 
   // ultrasonic setup
   pinMode(ULTRASONIC_TRIGGER_PIN, OUTPUT);
@@ -113,10 +167,16 @@ void setup() {
 
   // create publisher
   RCCHECK(rclc_publisher_init_default(
-    &publisher,
+    &publisher_ultrasonic,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt16),
     "ultrasonic_raw"));
+
+  RCCHECK(rclc_publisher_init_default(
+    &publisher_encoder,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int16),
+    "rpm_raw"));
 
   // create subscriber
   RCCHECK(rclc_subscription_init_default(
@@ -125,25 +185,27 @@ void setup() {
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int16),
     "pwm_control"));
 
-
-  // create timer,
-  const unsigned int timer_timeout = 100;
+  // create timer to publish ultrasonic data
   RCCHECK(rclc_timer_init_default(
-    &timer,
+    &timer_ultrasonic,
     &support,
-    RCL_MS_TO_NS(timer_timeout),
-    timer_callback));
+    RCL_MS_TO_NS(100),
+    publish_ultrasonic));
+
+  // TODO: maybe reuse same timer instead
+
+  // create timer to publish encoder data
+  RCCHECK(rclc_timer_init_default(
+    &timer_rpm,
+    &support,
+    RCL_MS_TO_NS(100),
+    publish_rpm));
 
   // create executor
-  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
-  RCCHECK(rclc_executor_add_timer(&executor, &timer));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
+  RCCHECK(rclc_executor_add_timer(&executor, &timer_ultrasonic));
+  RCCHECK(rclc_executor_add_timer(&executor, &timer_rpm));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &subMessage, &subscriber_callback, ON_NEW_DATA));
-
-  // TODO: maybe don't set motor to max speed here but just wait for input from motor control
-  // set motor to max speed
-  digitalWrite(ENA_PIN, HIGH);
-  // turn motor on
-  digitalWrite(IN1_PIN, HIGH);
 }
 
 void loop() {
