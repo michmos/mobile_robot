@@ -14,5 +14,13 @@
   <xacro:property name="caster_wheel_radius" value="${wheel_radius/2}"/>
   <xacro:property name="caster_wheel_mass" value="0.1"/>
 
+  <xacro:property name="imu_length" value="0.02"/>
+  <xacro:property name="imu_width" value="0.02"/>
+  <xacro:property name="imu_height" value="0.01"/>
+  <xacro:property name="imu_mass" value="0.01"/>
+
+  <xacro:property name="lidar_radius" value="0.035"/>
+  <xacro:property name="lidar_height" value="0.04"/>
+  <xacro:property name="lidar_mass" value="0.15"/>
 
 </robot>

@@ -103,4 +103,50 @@
     </xacro:inertial_sphere>
   </link>
 
+  <link name="imu">
+    <visual>
+      <geometry>
+        <box size="${imu_length} ${imu_width} ${imu_height}"/>
+      </geometry>
+      <material name="plastic"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="${imu_length} ${imu_width} ${imu_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertial_box mass="${imu_mass}" x="${imu_length}" y="${imu_width}" z="${imu_height}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_box>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="chassis"/>
+    <child link="imu"/>
+    <origin xyz="${chassis_length / 2} 0 ${chassis_height / 2}" rpy="0 0 0"/>
+  </joint>
+
+  <link name="lidar">
+    <visual>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+      <material name="plastic"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="${lidar_radius}" length="${lidar_height}"/>
+      </geometry>
+    </collision>
+    <xacro:inertial_cylinder mass="${lidar_mass}" length="${lidar_height}" radius="${lidar_radius}">
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </xacro:inertial_cylinder>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="chassis"/>
+    <child link="lidar"/>
+    <origin xyz="${chassis_length / 2} 0 ${chassis_height}" rpy="0 0 0"/>
+  </joint>
+
 </robot>
