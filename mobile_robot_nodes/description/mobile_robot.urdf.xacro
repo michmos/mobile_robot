@@ -123,7 +123,7 @@
   <joint name="imu_joint" type="fixed">
     <parent link="chassis"/>
     <child link="imu"/>
-    <origin xyz="${chassis_length / 2} 0 ${chassis_height / 2}" rpy="0 0 0"/>
+    <origin xyz="${0.25 * chassis_length} 0 ${chassis_height / 2}" rpy="0 0 0"/>
   </joint>
 
   <link name="lidar">
