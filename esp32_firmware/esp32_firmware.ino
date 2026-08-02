@@ -9,6 +9,10 @@
 #include <std_msgs/msg/int16.h>
 #include <std_msgs/msg/u_int16.h>
 
+#include "inc/L298.hpp"
+#include "inc/Encoder.hpp"
+
+
 #define RCCHECK(fn) \
   do { \
     rcl_ret_t temp_rc = fn; \
@@ -27,88 +31,76 @@ void error_loop() {
   }
 }
 
-rclc_support_t support;
-rcl_allocator_t allocator;
-rclc_executor_t executor;
-
-rcl_node_t node;
-
-rcl_publisher_t publisher_encoder;
-rcl_subscription_t subscriber;
-std_msgs__msg__Int16 sub_msg;
-
-rcl_timer_t timer_rpm;
-
-int8_t direction = 1;  // 1 forward, -1 backward
-unsigned long g_pulse_count = 0;
-const uint8_t k_encoder_resolution = 12;
-const uint8_t k_reducer_ratio = 40;
-
-
 //////////////////////////////////////////////////////////////////////////////////
 // Pins
 //////////////////////////////////////////////////////////////////////////////////
+// TODO: double check pins
 // Motor driver
-#define ENA_PIN 5
-#define IN1_PIN 16
-#define IN2_PIN 17
+#define ENA_PIN 15
+#define IN1_PIN 2
+#define IN2_PIN 4
+
+#define ENB_PIN 16
+#define IN3_PIN 17
+#define IN4_PIN 5
 
 // Motor encoder
-#define ENCODERA_1 18
-#define ENCODERB_1 19
+#define ENCODER1_SIGNAL1 18
+#define ENCODER1_SIGNAL2 19
 
+#define ENCODER2_SIGNAL1 21
+#define ENCODER2_SIGNAL2 3
+
+//////////////////////////////////////////////////////////////////////////////////
+// Globals
+//////////////////////////////////////////////////////////////////////////////////
+
+// micro_ros
+rclc_support_t support;
+rcl_allocator_t allocator;
+rclc_executor_t executor;
+rcl_node_t node;
+rcl_publisher_t publisher_encoder;
+rcl_subscription_t subscriber;
+std_msgs__msg__Int16 sub_msg;
+rcl_timer_t timer_rpm;
+
+const uint8_t k_reducer_ratio = 40;
+const uint8_t k_encoder_resolution = 12;
+const uint8_t k_pwm_res = 16;
+
+L298N g_motorDriver(ENA_PIN, IN1_PIN, IN2_PIN, ENB_PIN, IN3_PIN, IN4_PIN);
+Encoder g_encoder1(ENCODER1_SIGNAL1, ENCODER1_SIGNAL2);
+Encoder g_encoder2(ENCODER2_SIGNAL1, ENCODER2_SIGNAL2);
 
 //////////////////////////////////////////////////////////////////////////////////
 // Timer Callbacks
 //////////////////////////////////////////////////////////////////////////////////
-void on_encoder_a1_raise() {
-  if (digitalRead(ENCODERB_1) == LOW) {
-    direction = 1;
-  } else {
-    direction = -1;
-  }
-  g_pulse_count++;
-}
 
-// TODO: maybe use actual time difference (last_call_time)
+// TODO: adapt to both motors
 void publish_rpm(rcl_timer_t *timer, int64_t last_call_time) {
-  RCLC_UNUSED(last_call_time);
-  
-  unsigned long snaps = g_pulse_count;
-  int8_t dir = direction;
-  static unsigned long last_pulse_count = 0;
-
-  // this substraction even works when g_pulse_count overflows (since the result
-  // is casted to unsigned again)
-  unsigned long pulse_diff = snaps - last_pulse_count;
-  last_pulse_count = snaps;
-
-  uint16_t RPM = (pulse_diff * 600) / (k_reducer_ratio * k_encoder_resolution);
-  std_msgs__msg__Int16 msg;
-  msg.data = RPM * dir;
-  RCSOFTCHECK(rcl_publish(&publisher_encoder, &msg, NULL));
+  // RCLC_UNUSED(last_call_time);
+  //
+  // unsigned long pulse_diff = g_encoder1.get_pulse_diff();
+  //
+  // uint16_t RPM = (pulse_diff * 600) / (k_reducer_ratio * k_encoder_resolution);
+  // std_msgs__msg__Int16 msg;
+  // msg.data = RPM * dir;
+  // RCSOFTCHECK(rcl_publish(&publisher_encoder, &msg, NULL));
 }
-
 
 //////////////////////////////////////////////////////////////////////////////////
 // Subscriptions
 //////////////////////////////////////////////////////////////////////////////////
+// TODO: adapt to both motors
 void subscriber_callback(const void *subMsg) {
-  const std_msgs__msg__Int16 *message = (const std_msgs__msg__Int16 *)subMsg;
-
-  int8_t direction = (message->data < 0) ? -1 : 1;
-  uint16_t dutyCycle = map(abs(message->data), 0, INT16_MAX, 0, UINT16_MAX);
-
-  // handle direction
-  if (direction < 0) {
-    digitalWrite(IN1_PIN, HIGH);
-    digitalWrite(IN2_PIN, LOW);
-  } else {
-    digitalWrite(IN1_PIN, LOW);
-    digitalWrite(IN2_PIN, HIGH);
-  }
-
-  ledcWrite(1, dutyCycle);
+  // const std_msgs__msg__Int16 *message = (const std_msgs__msg__Int16 *)subMsg;
+  //
+  // e_direction dir = (message->data < 0) ? BACKWARDS : FORWARDS;
+  // uint16_t dutyCycle = map(abs(message->data), 0, INT16_MAX, 0, UINT16_MAX);
+  //
+  // g_motorDriver.updateDirection1(dir);
+  // g_motorDriver.updateSpeed(dutyCycle, dutyCycle);
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -117,22 +109,9 @@ void subscriber_callback(const void *subMsg) {
 void setup() {
   set_microros_transports();
 
-  // motor setup
-  pinMode(ENA_PIN, OUTPUT);
-  pinMode(IN1_PIN, OUTPUT);
-  pinMode(IN2_PIN, OUTPUT);
-  // turn motor off
-  digitalWrite(ENA_PIN, LOW);
-  digitalWrite(IN1_PIN, LOW);
-  digitalWrite(IN2_PIN, LOW);
-  // pwm setup
-  ledcSetup(1, 1000, 16);
-  ledcAttachPin(ENA_PIN, 1);
-
-  // encoder setup
-  pinMode(ENCODERA_1, INPUT_PULLUP);
-  pinMode(ENCODERB_1, INPUT_PULLUP);
-  attachInterrupt(ENCODERA_1, on_encoder_a1_raise, RISING);
+  g_motorDriver.setup(k_pwm_res);
+  g_encoder1.setup();
+  g_encoder2.setup();
 
   delay(2000);
 
