@@ -13,7 +13,7 @@
   do { \
     rcl_ret_t temp_rc = fn; \
     if ((temp_rc != RCL_RET_OK)) { error_loop(); } \
-  } while(0)
+  } while (0)
 
 #define RCSOFTCHECK(fn) \
   { \
@@ -33,12 +33,10 @@ rclc_executor_t executor;
 
 rcl_node_t node;
 
-rcl_publisher_t publisher_ultrasonic;
 rcl_publisher_t publisher_encoder;
 rcl_subscription_t subscriber;
 std_msgs__msg__Int16 sub_msg;
 
-rcl_timer_t timer_ultrasonic;
 rcl_timer_t timer_rpm;
 
 int8_t direction = 1;  // 1 forward, -1 backward
@@ -59,9 +57,6 @@ const uint8_t k_reducer_ratio = 40;
 #define ENCODERA_1 18
 #define ENCODERB_1 19
 
-// ultrasonic sensor
-#define ULTRASONIC_TRIGGER_PIN 2
-#define ULTRASONIC_ECHO_PIN 4
 
 //////////////////////////////////////////////////////////////////////////////////
 // Timer Callbacks
@@ -94,24 +89,6 @@ void publish_rpm(rcl_timer_t *timer, int64_t last_call_time) {
   RCSOFTCHECK(rcl_publish(&publisher_encoder, &msg, NULL));
 }
 
-void publish_ultrasonic(rcl_timer_t *timer, int64_t last_call_time) {
-  RCLC_UNUSED(last_call_time);
-
-  // trigger sensor
-  digitalWrite(ULTRASONIC_TRIGGER_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(ULTRASONIC_TRIGGER_PIN, LOW);
-
-  // measure the duration until echo
-  uint16_t duration = pulseIn(ULTRASONIC_ECHO_PIN, HIGH, 38000);
-  if (duration == 0) {
-    // 0 in case of timeout
-    return;
-  }
-  std_msgs__msg__UInt16 msg;
-  msg.data = duration;
-  RCSOFTCHECK(rcl_publish(&publisher_ultrasonic, &msg, NULL));
-}
 
 //////////////////////////////////////////////////////////////////////////////////
 // Subscriptions
@@ -157,10 +134,6 @@ void setup() {
   pinMode(ENCODERB_1, INPUT_PULLUP);
   attachInterrupt(ENCODERA_1, on_encoder_a1_raise, RISING);
 
-  // ultrasonic setup
-  pinMode(ULTRASONIC_TRIGGER_PIN, OUTPUT);
-  pinMode(ULTRASONIC_ECHO_PIN, INPUT);
-
   delay(2000);
 
   allocator = rcl_get_default_allocator();
@@ -172,12 +145,6 @@ void setup() {
   RCCHECK(rclc_node_init_default(&node, "esp32", "", &support));
 
   // create publisher
-  RCCHECK(rclc_publisher_init_default(
-    &publisher_ultrasonic,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt16),
-    "ultrasonic_raw"));
-
   RCCHECK(rclc_publisher_init_default(
     &publisher_encoder,
     &node,
@@ -191,13 +158,6 @@ void setup() {
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int16),
     "pwm_control"));
 
-  // create timer to publish ultrasonic data
-  RCCHECK(rclc_timer_init_default(
-    &timer_ultrasonic,
-    &support,
-    RCL_MS_TO_NS(100),
-    publish_ultrasonic));
-
   // create timer to publish encoder data
   RCCHECK(rclc_timer_init_default(
     &timer_rpm,
@@ -206,8 +166,7 @@ void setup() {
     publish_rpm));
 
   // create executor
-  RCCHECK(rclc_executor_init(&executor, &support.context, 3, &allocator));
-  RCCHECK(rclc_executor_add_timer(&executor, &timer_ultrasonic));
+  RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
   RCCHECK(rclc_executor_add_timer(&executor, &timer_rpm));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &sub_msg, &subscriber_callback, ON_NEW_DATA));
 }
