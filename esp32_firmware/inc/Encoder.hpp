@@ -2,54 +2,45 @@
 #define ENCODER_HPP
 
 #include <Arduino.h>
-#include <FunctionalInterrupt.h>
 #include <cstdint>
 
 class Encoder {
 private:
-  int8_t _dir;
-  unsigned long _pulse_count;
-  unsigned long _last_pulse_count;
+  volatile int32_t tick_count_;
+  volatile int8_t sign_;
 
-  uint8_t _signal1_pin;
-  uint8_t _signal2_pin;
+  uint8_t signal1_pin_;
+  uint8_t signal2_pin_;
+
+  // interrupt callback incrementing tick count when FORWARD and decrementing
+  // when BACKWARD
+  void IRAM_ATTR on_signal1_raise_() {
+    tick_count_ += (digitalRead(signal2_pin_) == LOW) ? sign_ : -sign_;
+  }
+
+  static void IRAM_ATTR isr_(void *arg) {
+    static_cast<Encoder *>(arg)->on_signal1_raise_();
+  }
 
 public:
   Encoder(uint8_t signal1_pin, uint8_t signal2_pin)
-      : _dir(1), _pulse_count(0), _last_pulse_count(0),
-        _signal1_pin(signal1_pin), _signal2_pin(signal2_pin) {}
+      : tick_count_(0), signal1_pin_(signal1_pin), signal2_pin_(signal2_pin),
+        sign_(1) {}
 
   Encoder(const Encoder &) = delete;
   Encoder &operator=(const Encoder &) = delete;
 
   // setting up pins and interrupts - should be called in main setup()
   void setup() {
-    pinMode(_signal1_pin, INPUT_PULLUP);
-    pinMode(_signal2_pin, INPUT_PULLUP);
-    attachInterrupt(
-        _signal1_pin, [this]() -> void { on_signal1_raise(); }, RISING);
+    pinMode(signal1_pin_, INPUT_PULLUP);
+    pinMode(signal2_pin_, INPUT_PULLUP);
+    attachInterruptArg(signal1_pin_, isr_, this, RISING);
   }
 
-  // interrupt callback incrementing pulse count and updating direction
-  void on_signal1_raise() {
-    if (digitalRead(_signal2_pin) == LOW) {
-      _dir = 1;
-    } else {
-      _dir = -1;
-    }
-    _pulse_count++;
-  }
+  // flips counting direction of encoder
+  void setInverted(bool inverted) { sign_ = (inverted) ? -1 : 1; }
 
-  // returns the amount of pulses since the last function call
-  unsigned long get_pulse_diff() {
-    unsigned long snaps = _pulse_count;
-    // this substraction even works when _pulse_count overflows (since the
-    // result is casted to unsigned again)
-    unsigned long diff = snaps - _last_pulse_count;
-    _last_pulse_count = snaps;
-
-    return diff;
-  }
+  int32_t get_tick_count() const { return tick_count_; }
 };
 
 #endif
