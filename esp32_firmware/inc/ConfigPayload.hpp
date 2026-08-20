@@ -31,10 +31,11 @@ constexpr float k_min_duty_max = 1.0f; // exclusive
 // divides the tick delta in the tick -> rad conversion
 constexpr float k_ticks_per_wheel_rev_min = 0.0f; // exclusive
 
-// timing. The wire format carries these as uint16_t, and the periods are
-// derived as 1000000 / rate_hz, so zero is not allowed
+// timing. The periods are derived as 1000000 / rate_hz, so zero is not
+// allowed, and the maxima are what the esp32 loop can realistically service.
 constexpr uint16_t k_timing_min = 1;
-constexpr uint16_t k_timing_max = UINT16_MAX;
+constexpr uint16_t k_rate_hz_max = 1000;
+constexpr uint16_t k_watchdog_timeout_ms_max = 5000;
 
 struct ConfigPayload {
   // PI gains - shared by both wheels
@@ -137,10 +138,11 @@ inline e_config_field validateConfig(const ConfigPayload &c) {
   if (!(c.ticks_per_wheel_rev > k_ticks_per_wheel_rev_min)) {
     return CONFIG_TICKS_PER_WHEEL_REV;
   }
-  if (c.watchdog_timeout_ms < k_timing_min) {
+  if (c.watchdog_timeout_ms < k_timing_min ||
+      c.watchdog_timeout_ms > k_watchdog_timeout_ms_max) {
     return CONFIG_WATCHDOG_TIMEOUT_MS;
   }
-  if (c.control_rate_hz < k_timing_min) {
+  if (c.control_rate_hz < k_timing_min || c.control_rate_hz > k_rate_hz_max) {
     return CONFIG_CONTROL_RATE_HZ;
   }
   // a report faster than the control loop would send duplicate samples

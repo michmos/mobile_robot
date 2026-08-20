@@ -33,7 +33,9 @@ protected:
     return val;
   }
 
-  unsigned long parseULong_(const char *str, bool *errFlag) {
+  // parses wide and range checks before narrowing, a value above UINT16_MAX
+  // would otherwise wrap silently
+  uint16_t parseUInt16_(const char *str, bool *errFlag) {
     if (!str) {
       *errFlag = true;
       return 0;
@@ -41,15 +43,15 @@ protected:
 
     char *endptr = NULL;
     unsigned long val = strtoul(str, &endptr, 10);
-    if (endptr == str || *endptr != '\0') {
+    if (endptr == str || *endptr != '\0' || val > UINT16_MAX) {
       *errFlag = true;
       return 0;
     }
-    return val;
+    return (uint16_t)val;
   }
 
   bool parseBool_(const char *str, bool *errFlag) {
-    unsigned long val = parseULong_(str, errFlag);
+    uint16_t val = parseUInt16_(str, errFlag);
     if (val > 1) {
       *errFlag = true;
       return false;
@@ -113,16 +115,15 @@ public:
 
   int init(const std::string &line) override {
     std::string copy = line;
-    lastError_ = k_malformed;
 
     const char *id = strtok(&copy[0], ",");
     if (!id || strlen(id) != 1 || id[0] != 'C') {
+      lastError_ = k_malformed;
       return -1;
     }
 
-    protocol::ConfigPayload parsed;
     bool errFlag = false;
-
+    protocol::ConfigPayload parsed;
     parsed.kp = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.ki = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.integral_limit = parseFloat_(strtok(NULL, ","), &errFlag);
@@ -131,42 +132,23 @@ public:
     parsed.min_duty_left = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.min_duty_right = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.ticks_per_wheel_rev = parseFloat_(strtok(NULL, ","), &errFlag);
-
-    // parsed wide and narrowed below, an out of range value would otherwise
-    // wrap silently into the uint16_t fields
-    unsigned long watchdog_timeout_ms =
-        parseULong_(strtok(NULL, ","), &errFlag);
-    unsigned long control_rate_hz = parseULong_(strtok(NULL, ","), &errFlag);
-    unsigned long report_rate_hz = parseULong_(strtok(NULL, ","), &errFlag);
-
+    parsed.watchdog_timeout_ms = parseUInt16_(strtok(NULL, ","), &errFlag);
+    parsed.control_rate_hz = parseUInt16_(strtok(NULL, ","), &errFlag);
+    parsed.report_rate_hz = parseUInt16_(strtok(NULL, ","), &errFlag);
     parsed.invert_left = parseBool_(strtok(NULL, ","), &errFlag);
     parsed.invert_right = parseBool_(strtok(NULL, ","), &errFlag);
 
-    if (errFlag) {
+    // check for error during parsing and remaining tokens
+    if (errFlag || strtok(NULL, ",") != NULL) {
+      lastError_ = k_malformed;
       return -1;
     }
 
-    // there shouldn't be any leftover tokens
-    if (strtok(NULL, ",") != NULL) {
-      return -1;
-    }
-
-    if (watchdog_timeout_ms > protocol::k_timing_max) {
-      return reject_(protocol::CONFIG_WATCHDOG_TIMEOUT_MS);
-    }
-    if (control_rate_hz > protocol::k_timing_max) {
-      return reject_(protocol::CONFIG_CONTROL_RATE_HZ);
-    }
-    if (report_rate_hz > protocol::k_timing_max) {
-      return reject_(protocol::CONFIG_REPORT_RATE_HZ);
-    }
-    parsed.watchdog_timeout_ms = (uint16_t)watchdog_timeout_ms;
-    parsed.control_rate_hz = (uint16_t)control_rate_hz;
-    parsed.report_rate_hz = (uint16_t)report_rate_hz;
-
+    // range check parsed values
     protocol::e_config_field ret = protocol::validateConfig(parsed);
     if (ret != protocol::CONFIG_OK) {
-      return reject_(ret);
+      lastError_ = protocol::configFieldName(ret);
+      return -1;
     }
 
     static_cast<protocol::ConfigPayload &>(*this) = parsed;
@@ -184,11 +166,6 @@ private:
   static constexpr const char *k_malformed = "malformed";
 
   const char *lastError_;
-
-  int reject_(protocol::e_config_field field) {
-    lastError_ = protocol::configFieldName(field);
-    return -1;
-  }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
