@@ -1,6 +1,7 @@
 #ifndef MESSAGES_HPP
 #define MESSAGES_HPP
 
+#include "ConfigPayload.hpp"
 #include <Arduino.h>
 #include <cstdint>
 #include <cstdlib>
@@ -97,55 +98,29 @@ public:
 //   <invert_left>,<invert_right>\n
 //
 // sent once by the pi after it sees the SETUP event, and re-sent whenever the
-// esp32 reboots - the esp32 keeps no persistent copy
-class Config : public AReceiveMessage {
+// esp32 reboots
+//
+// the payload fields and their range check live in ConfigPayload.hpp, which the
+// pi shares, so both ends agree on what a valid configuration is
+class Config : public AReceiveMessage, public protocol::ConfigPayload {
 public:
   bool initialized;
 
   // set when the message was parsed
   unsigned long timestamp_ms;
 
-  // PI gains - shared by both wheels
-  float kp;
-  float ki;
-  float integral_limit; // anti-windup clamp on |integral term|, duty fraction
-
-  // feedforward - per wheel, since stiction and torque differ normally
-  float slope_left;     // duty fraction per (rad/s)
-  float slope_right;    // duty fraction per (rad/s)
-  float min_duty_left;  // deadband compensation, duty fraction [0,1)
-  float min_duty_right; // deadband compensation, duty fraction [0,1)
-
-  // limits and scaling
-  float ticks_per_wheel_rev; // counted encoder edges per wheel revolution,
-
-  // timing
-  uint16_t watchdog_timeout_ms; // stop motors if no MotorCmd within this
-  uint16_t control_rate_hz;     // PI update rate
-  uint16_t report_rate_hz;      // EncoderData publish rate
-
-  // sign conventions - the two motors are mounted mirrored, so "forwards" is
-  // opposite rotation on each side
-  bool invert_left;
-  bool invert_right;
-
-  // defaults
-  Config()
-      : initialized(false), timestamp_ms(0), kp(0.0f), ki(0.0f),
-        integral_limit(0.0f), slope_left(0.1f), slope_right(0.1f),
-        min_duty_left(0.0f), min_duty_right(0.0f), ticks_per_wheel_rev(480.0f),
-        watchdog_timeout_ms(200), control_rate_hz(200), report_rate_hz(50),
-        invert_left(false), invert_right(false) {}
+  Config() : initialized(false), timestamp_ms(0), lastError_(NULL) {}
 
   int init(const std::string &line) override {
     std::string copy = line;
+    lastError_ = k_malformed;
 
     const char *id = strtok(&copy[0], ",");
     if (!id || strlen(id) != 1 || id[0] != 'C') {
       return -1;
     }
 
-    Config parsed;
+    protocol::ConfigPayload parsed;
     bool errFlag = false;
 
     parsed.kp = parseFloat_(strtok(NULL, ","), &errFlag);
@@ -156,9 +131,14 @@ public:
     parsed.min_duty_left = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.min_duty_right = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.ticks_per_wheel_rev = parseFloat_(strtok(NULL, ","), &errFlag);
-    parsed.watchdog_timeout_ms = parseULong_(strtok(NULL, ","), &errFlag);
-    parsed.control_rate_hz = parseULong_(strtok(NULL, ","), &errFlag);
-    parsed.report_rate_hz = parseULong_(strtok(NULL, ","), &errFlag);
+
+    // parsed wide and narrowed below, an out of range value would otherwise
+    // wrap silently into the uint16_t fields
+    unsigned long watchdog_timeout_ms =
+        parseULong_(strtok(NULL, ","), &errFlag);
+    unsigned long control_rate_hz = parseULong_(strtok(NULL, ","), &errFlag);
+    unsigned long report_rate_hz = parseULong_(strtok(NULL, ","), &errFlag);
+
     parsed.invert_left = parseBool_(strtok(NULL, ","), &errFlag);
     parsed.invert_right = parseBool_(strtok(NULL, ","), &errFlag);
 
@@ -171,25 +151,43 @@ public:
       return -1;
     }
 
-    if (!parsed.isValid_()) {
-      return -1;
+    if (watchdog_timeout_ms > protocol::k_timing_max) {
+      return reject_(protocol::CONFIG_WATCHDOG_TIMEOUT_MS);
+    }
+    if (control_rate_hz > protocol::k_timing_max) {
+      return reject_(protocol::CONFIG_CONTROL_RATE_HZ);
+    }
+    if (report_rate_hz > protocol::k_timing_max) {
+      return reject_(protocol::CONFIG_REPORT_RATE_HZ);
+    }
+    parsed.watchdog_timeout_ms = (uint16_t)watchdog_timeout_ms;
+    parsed.control_rate_hz = (uint16_t)control_rate_hz;
+    parsed.report_rate_hz = (uint16_t)report_rate_hz;
+
+    protocol::e_config_field ret = protocol::validateConfig(parsed);
+    if (ret != protocol::CONFIG_OK) {
+      return reject_(ret);
     }
 
-    parsed.initialized = true;
-    parsed.timestamp_ms = millis();
-    *this = parsed;
+    static_cast<protocol::ConfigPayload &>(*this) = parsed;
+    initialized = true;
+    timestamp_ms = millis();
+    lastError_ = NULL;
     return 0;
   }
 
+  // why the last init() failed, NULL if it succeeded. Points at a string
+  // literal, so it stays valid for as long as the object does
+  const char *lastError() const { return lastError_; }
+
 private:
-  // range check
-  bool isValid_() const {
-    return kp >= 0.0f && ki >= 0.0f && integral_limit >= 0.0f &&
-           slope_left > 0.0f && slope_right > 0.0f && min_duty_left >= 0.0f &&
-           min_duty_left < 1.0f && min_duty_right >= 0.0f &&
-           min_duty_right < 1.0f && ticks_per_wheel_rev > 0.0f &&
-           watchdog_timeout_ms > 0 && control_rate_hz > 0 &&
-           report_rate_hz > 0 && report_rate_hz <= control_rate_hz;
+  static constexpr const char *k_malformed = "malformed";
+
+  const char *lastError_;
+
+  int reject_(protocol::e_config_field field) {
+    lastError_ = protocol::configFieldName(field);
+    return -1;
   }
 };
 
