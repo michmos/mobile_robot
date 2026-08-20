@@ -44,7 +44,9 @@ private:
     case 'C': {
       msgs::Config config;
       if (config.init(line) == -1) {
-        writeln(msgs::Log("Invalid configuration message: " + line));
+        // the pi waits on ACK/NACK, so a rejected configuration has to answer
+        // rather than only leaving a log line behind
+        writeln(msgs::Event(msgs::Event::NACK, config.lastError()));
         return;
       }
       config_ = config;

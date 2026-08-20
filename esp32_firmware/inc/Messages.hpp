@@ -247,15 +247,18 @@ public:
   }
 };
 
-// S,<event_string>
+// S,<event_string>[,<detail>]
 class Event : public ASendMessage {
 public:
   enum e_event_type {
     SETUP, // starting setup
     ACK,   // acknowledge receipt of configuration data
+    NACK,  // configuration rejected, detail names the offending field
   } e;
 
-  Event(e_event_type e) : e(e) {}
+  Event(e_event_type e) : e(e), detail_() {}
+  Event(e_event_type e, const std::string &detail) : e(e), detail_(detail) {}
+
   std::string serialize() const override {
     std::string enumString;
     switch (e) {
@@ -265,10 +268,17 @@ public:
     case ACK:
       enumString = "ACK";
       break;
+    case NACK:
+      enumString = "NACK";
+      break;
     }
 
-    return std::string("S,") + enumString + "\n";
+    std::string detail = detail_.empty() ? "" : ("," + detail_);
+    return std::string("S,") + enumString + detail + "\n";
   }
+
+private:
+  std::string detail_;
 };
 
 // L,<log message>
