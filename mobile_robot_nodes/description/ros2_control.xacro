@@ -1,0 +1,54 @@
+
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <ros2_control name="mobile_robot_ros2_control" type="system">
+
+    <hardware>
+      <plugin>mobile_robot_hardware/MobileRobotHardware</plugin>
+      <!-- list all params here that are needed by the hardware plugin - it will receive them  -->
+      <!-- through the info object. e.g. baud_rate, serial_port ... -->
+      <param name="serial_port">/dev/ttyUSB0</param>
+      <param name="baud_rate">115200</param>
+
+      <!-- PI gains, shared by both wheels, integral limit is a duty fraction -->
+      <param name="pid_kp">0.5</param>
+      <param name="pid_ki">2.0</param>
+      <param name="pid_integral_limit">0.3</param>
+
+      <!-- feedforward per wheel, slope in duty fraction per (rad/s),
+           min_duty in [0,1) compensates the motor deadband -->
+      <param name="ff_slope_left">0.1</param>
+      <param name="ff_slope_right">0.1</param>
+      <param name="ff_min_duty_left">0.0</param>
+      <param name="ff_min_duty_right">0.0</param>
+
+      <param name="ticks_per_wheel_rev">480</param>
+
+      <!-- report_rate_hz must not exceed control_rate_hz -->
+      <param name="watchdog_timeout_ms">200</param>
+      <param name="control_rate_hz">200</param>
+      <param name="report_rate_hz">50</param>
+
+      <param name="invert_left">false</param>
+      <param name="invert_right">false</param>
+    </hardware>
+
+    <joint name="left_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min" value="-10.0"/>
+        <param name="max" value="10.0"/>
+      </command_interface>
+      <state_interface name="velocity"/>
+      <state_interface name="position"/>
+    </joint>
+
+    <joint name="right_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min" value="-10.0"/>
+        <param name="max" value="10.0"/>
+      </command_interface>
+      <state_interface name="velocity"/>
+      <state_interface name="position"/>
+    </joint>
+
+  </ros2_control>
+</robot>
