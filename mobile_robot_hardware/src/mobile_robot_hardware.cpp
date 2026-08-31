@@ -161,7 +161,7 @@ MobileRobotHardware::on_init(const HardwareComponentInterfaceParams &params) {
   }
 
   try {
-    validateJoints(info_, expected_joints_);
+    validateJoints(info_.joints, expected_joints_);
 
     ParsedParams parsed = parseParams(info_.hardware_parameters);
     serialPort_ = std::move(parsed.serialPort);
