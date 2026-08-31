@@ -8,11 +8,18 @@
   <license>TODO: License declaration</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- io_context's exported CMake config calls find_package(asio_cmake_module),
+       but io_context's own package.xml only declares it as buildtool_depend
+       instead of buildtool_export_depend, so it never reaches us via apt/rosdep
+       on its own -->
+  <buildtool_depend>asio_cmake_module</buildtool_depend>
 
   <depend>hardware_interface</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_lifecycle</depend>
   <depend>pluginlib</depend>
+  <depend>io_context</depend>
+  <depend>serial_driver</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

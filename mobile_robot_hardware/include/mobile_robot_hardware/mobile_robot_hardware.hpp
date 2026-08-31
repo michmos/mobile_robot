@@ -5,12 +5,18 @@
 #include <hardware_interface/system_interface.hpp>
 #include <hardware_interface/types/hardware_component_interface_params.hpp>
 #include <hardware_interface/types/hardware_interface_return_values.hpp>
+#include <io_context/io_context.hpp>
 #include <rclcpp_lifecycle/state.hpp>
+#include <serial_driver/serial_driver.hpp>
 
 // shared with the firmware, the include path points at esp32_firmware/
 #include "inc/ConfigPayload.hpp"
 
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -20,6 +26,22 @@ class MobileRobotHardware : public hardware_interface::SystemInterface {
 private:
   const std::vector<std::string> expected_joints_ = {"left_wheel_joint",
                                                      "right_wheel_joint"};
+
+  // ioContext must outlive driver: SerialDriver only stores a reference to it
+  struct Serial {
+    drivers::common::IoContext ioContext;
+    drivers::serial_driver::SerialDriver driver;
+    std::shared_ptr<drivers::serial_driver::SerialPort>
+        port; // null until opened
+
+    // fed by the async_receive callback in on_configure(); readLine_() drains
+    // it
+    std::string rxBuffer;
+    std::mutex rxMutex;
+    std::condition_variable rxCv;
+
+    Serial() : driver(ioContext) {}
+  } serial_;
 
   // <param> tags of the <ros2_control> block, parsed in on_init(). These two
   // stay on the pi, the fields keep the snake_case of the shared struct
@@ -81,6 +103,16 @@ private:
 
   hardware_interface::CommandInterface::SharedPtr leftVelocityCommand_;
   hardware_interface::CommandInterface::SharedPtr rightVelocityCommand_;
+
+  // blocks up to `timeout` for a '\n'-terminated line in serial_.rxBuffer
+  // @param line: initialized with retrieved line
+  // @param timeout: time to wait for '\n'
+  bool readLine_(std::string &line, std::chrono::milliseconds timeout);
+
+  // esp32 handshake: wait for its SETUP event, send config_, wait for ACK/NACK
+  // @throws std::runtime_error naming which step failed
+  void performHandshake_(std::chrono::milliseconds setupTimeout,
+                         std::chrono::milliseconds ackTimeout);
 };
 
 } // namespace mobile_robot_hardware

@@ -150,6 +150,26 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
   return parsed;
 }
 
+// without a timeout, a dead esp32 would hang the lifecycle transition forever
+// instead of failing it
+constexpr std::chrono::milliseconds k_setup_timeout{5000};
+constexpr std::chrono::milliseconds k_ack_timeout{2000};
+
+// invert_left/invert_right must go out as 0/1, not as true/false
+std::string serializeConfig(const protocol::ConfigPayload &c) {
+  return "C," + std::to_string(c.kp) + "," + std::to_string(c.ki) + "," +
+         std::to_string(c.integral_limit) + "," + std::to_string(c.slope_left) +
+         "," + std::to_string(c.slope_right) + "," +
+         std::to_string(c.min_duty_left) + "," +
+         std::to_string(c.min_duty_right) + "," +
+         std::to_string(c.ticks_per_wheel_rev) + "," +
+         std::to_string(c.watchdog_timeout_ms) + "," +
+         std::to_string(c.control_rate_hz) + "," +
+         std::to_string(c.report_rate_hz) + "," +
+         std::string(c.invert_left ? "1" : "0") + "," +
+         std::string(c.invert_right ? "1" : "0") + "\n";
+}
+
 } // namespace
 
 CallbackReturn
@@ -177,12 +197,98 @@ MobileRobotHardware::on_init(const HardwareComponentInterfaceParams &params) {
   return CallbackReturn::SUCCESS;
 }
 
-// CallbackReturn MobileRobotHardware::on_configure(
-//     const rclcpp_lifecycle::State &previous_state) {
-//
-//   return CallbackReturn::SUCCESS;
-// }
-//
+bool MobileRobotHardware::readLine_(std::string &line,
+                                    std::chrono::milliseconds timeout) {
+  std::unique_lock<std::mutex> lock(serial_.rxMutex);
+  const auto hasLine = [this] {
+    return serial_.rxBuffer.find('\n') != std::string::npos;
+  };
+  if (!serial_.rxCv.wait_for(lock, timeout, hasLine)) {
+    return false;
+  }
+
+  const size_t nl = serial_.rxBuffer.find('\n');
+  line = serial_.rxBuffer.substr(0, nl);
+  serial_.rxBuffer.erase(0, nl + 1);
+  return true;
+}
+
+void MobileRobotHardware::performHandshake_(
+    std::chrono::milliseconds setupTimeout,
+    std::chrono::milliseconds ackTimeout) {
+  std::string line;
+
+  if (!readLine_(line, setupTimeout) || line != "S,SETUP") {
+    throw std::runtime_error("timed out waiting for the esp32's SETUP event");
+  }
+
+  const std::string configLine = serializeConfig(config_);
+  serial_.port->send(
+      std::vector<uint8_t>(configLine.begin(), configLine.end()));
+
+  if (!readLine_(line, ackTimeout)) {
+    throw std::runtime_error(
+        "timed out waiting for the esp32 to acknowledge the configuration");
+  }
+  if (line.rfind("S,NACK,", 0) == 0) {
+    throw std::runtime_error("esp32 rejected configuration field '" +
+                             line.substr(7) + "'");
+  }
+  if (line != "S,ACK") {
+    throw std::runtime_error("unexpected response from esp32: '" + line + "'");
+  }
+}
+
+CallbackReturn
+MobileRobotHardware::on_configure(const rclcpp_lifecycle::State &) {
+  using namespace drivers::serial_driver;
+
+  // 8N1, no flow control matches the esp32's default UART setup
+  const SerialPortConfig serialConfig(baudRate_, FlowControl::NONE,
+                                      Parity::NONE, StopBits::ONE);
+
+  try {
+    // validate and cache handles for later use
+    leftPositionState_ =
+        get_state_interface_handle(expected_joints_[0] + "/" + HW_IF_POSITION);
+    leftVelocityState_ =
+        get_state_interface_handle(expected_joints_[0] + "/" + HW_IF_VELOCITY);
+    rightPositionState_ =
+        get_state_interface_handle(expected_joints_[1] + "/" + HW_IF_POSITION);
+    rightVelocityState_ =
+        get_state_interface_handle(expected_joints_[1] + "/" + HW_IF_VELOCITY);
+
+    leftVelocityCommand_ = get_command_interface_handle(expected_joints_[0] +
+                                                        "/" + HW_IF_VELOCITY);
+    rightVelocityCommand_ = get_command_interface_handle(expected_joints_[1] +
+                                                         "/" + HW_IF_VELOCITY);
+
+    // setup serial port
+    serial_.driver.init_port(serialPort_, serialConfig);
+    serial_.port = serial_.driver.port();
+    serial_.port->open();
+    // // re-arms itself after every callback, so this stays registered for as
+    // // long as the port is open
+    serial_.port->async_receive(
+        [this](std::vector<uint8_t> &data, const size_t &length) {
+          std::lock_guard<std::mutex> lock(serial_.rxMutex);
+          serial_.rxBuffer.append(reinterpret_cast<const char *>(data.data()),
+                                  length);
+          serial_.rxCv.notify_all();
+        });
+
+    performHandshake_(k_setup_timeout, k_ack_timeout);
+  } catch (const std::exception &e) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to configure esp32 on '%s': %s",
+                 serialPort_.c_str(), e.what());
+    return CallbackReturn::ERROR;
+  }
+
+  RCLCPP_INFO(this->get_logger(), "esp32 on %s acknowledged configuration",
+              serialPort_.c_str());
+  return CallbackReturn::SUCCESS;
+}
+
 // CallbackReturn
 // MobileRobotHardware::on_cleanup(const rclcpp_lifecycle::State
 // &previous_state) {

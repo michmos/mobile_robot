@@ -13,6 +13,8 @@ find_package(hardware_interface REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
 find_package(pluginlib REQUIRED)
+find_package(io_context REQUIRED)
+find_package(serial_driver REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_hardware.cpp
@@ -36,6 +38,13 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
   rclcpp::rclcpp
   rclcpp_lifecycle::rclcpp_lifecycle
   ${pluginlib_TARGETS}
+  ${io_context_LIBRARIES}
+  ${serial_driver_LIBRARIES}
+)
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+  ${io_context_INCLUDE_DIRS}
+  ${serial_driver_INCLUDE_DIRS}
 )
 
 install(
@@ -60,7 +69,7 @@ install(
 )
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(hardware_interface rclcpp rclcpp_lifecycle pluginlib)
+ament_export_dependencies(hardware_interface rclcpp rclcpp_lifecycle pluginlib io_context serial_driver)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
