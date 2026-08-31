@@ -289,9 +289,33 @@ MobileRobotHardware::on_configure(const rclcpp_lifecycle::State &) {
   return CallbackReturn::SUCCESS;
 }
 
-// CallbackReturn
-// MobileRobotHardware::on_cleanup(const rclcpp_lifecycle::State
-// &previous_state) {
-//
-//   return CallbackReturn::SUCCESS;
-// }
+CallbackReturn
+MobileRobotHardware::on_cleanup(const rclcpp_lifecycle::State &) {
+  // close() can throw on an asio-level error; log it but still tear down our
+  // own state below so a bad close doesn't leave stale handles/port around
+  try {
+    if (serial_.port && serial_.port->is_open()) {
+      serial_.port->close();
+    }
+  } catch (const std::exception &e) {
+    RCLCPP_WARN(this->get_logger(), "Error closing serial port '%s': %s",
+                serialPort_.c_str(), e.what());
+  }
+  serial_.port.reset();
+
+  {
+    std::lock_guard<std::mutex> lock(serial_.rxMutex);
+    serial_.rxBuffer.clear();
+  }
+
+  leftPositionState_.reset();
+  leftVelocityState_.reset();
+  rightPositionState_.reset();
+  rightVelocityState_.reset();
+  leftVelocityCommand_.reset();
+  rightVelocityCommand_.reset();
+
+  RCLCPP_INFO(this->get_logger(), "Closed serial port %s",
+              serialPort_.c_str());
+  return CallbackReturn::SUCCESS;
+}
