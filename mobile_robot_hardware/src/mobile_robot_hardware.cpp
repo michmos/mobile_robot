@@ -369,3 +369,24 @@ MobileRobotHardware::on_deactivate(const rclcpp_lifecycle::State &) {
               serialPort_.c_str());
   return CallbackReturn::SUCCESS;
 }
+
+CallbackReturn MobileRobotHardware::on_shutdown(
+    const rclcpp_lifecycle::State &previous_state) {
+  // Best-effort: this is final, so log and keep going rather than bailing out
+  // with an open port or unstopped motors
+  if (previous_state.label() == lifecycle_state_names::ACTIVE &&
+      on_deactivate(previous_state) != CallbackReturn::SUCCESS) {
+    RCLCPP_WARN(this->get_logger(), "Failed to stop motors during shutdown");
+  }
+  if ((previous_state.label() == lifecycle_state_names::ACTIVE ||
+       previous_state.label() == lifecycle_state_names::INACTIVE) &&
+      on_cleanup(previous_state) != CallbackReturn::SUCCESS) {
+    RCLCPP_WARN(this->get_logger(),
+                "Failed to release resources during shutdown");
+  }
+
+  RCLCPP_INFO(this->get_logger(),
+              "Shut down hardware interface for esp32 on %s",
+              serialPort_.c_str());
+  return CallbackReturn::SUCCESS;
+}

@@ -77,7 +77,8 @@ public:
   hardware_interface::CallbackReturn
   on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
 
-  // lifecycle: any -> FINALIZED (final teardown before destruction)
+  // lifecycle: any -> FINALIZED (final teardown; reuses on_deactivate()/
+  // on_cleanup() since this can be reached directly from any state)
   hardware_interface::CallbackReturn
   on_shutdown(const rclcpp_lifecycle::State &previous_state) override;
 
