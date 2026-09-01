@@ -170,6 +170,12 @@ std::string serializeConfig(const protocol::ConfigPayload &c) {
          std::string(c.invert_right ? "1" : "0") + "\n";
 }
 
+// M,<left_vel_cmd>,<right_vel_cmd>\n
+std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
+  return "M," + std::to_string(leftVelCmd) + "," + std::to_string(rightVelCmd) +
+         "\n";
+}
+
 } // namespace
 
 CallbackReturn
@@ -340,5 +346,26 @@ MobileRobotHardware::on_activate(const rclcpp_lifecycle::State &) {
   lastSampleTimeUs_ = 0;
 
   RCLCPP_INFO(this->get_logger(), "Activated esp32 on %s", serialPort_.c_str());
+  return CallbackReturn::SUCCESS;
+}
+
+void MobileRobotHardware::sendMotorCmd_(float leftVelCmd, float rightVelCmd) {
+  const std::string cmd = serializeMotorCmd(leftVelCmd, rightVelCmd);
+  serial_.port->send(std::vector<uint8_t>(cmd.begin(), cmd.end()));
+}
+
+CallbackReturn
+MobileRobotHardware::on_deactivate(const rclcpp_lifecycle::State &) {
+  try {
+    sendMotorCmd_(0.0f, 0.0f);
+  } catch (const std::exception &e) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Failed to send stop command to esp32 on '%s': %s",
+                 serialPort_.c_str(), e.what());
+    return CallbackReturn::ERROR;
+  }
+
+  RCLCPP_INFO(this->get_logger(), "Deactivated esp32 on %s, motors stopped",
+              serialPort_.c_str());
   return CallbackReturn::SUCCESS;
 }

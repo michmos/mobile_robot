@@ -72,7 +72,8 @@ public:
   hardware_interface::CallbackReturn
   on_activate(const rclcpp_lifecycle::State &previous_state) override;
 
-  // lifecycle: ACTIVE -> INACTIVE (disable motors, stop commanding)
+  // lifecycle: ACTIVE -> INACTIVE (send stop command directly, since write()
+  // won't be called anymore)
   hardware_interface::CallbackReturn
   on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
 
@@ -105,7 +106,7 @@ private:
   hardware_interface::CommandInterface::SharedPtr leftVelocityCommand_;
   hardware_interface::CommandInterface::SharedPtr rightVelocityCommand_;
 
-  // used to compute HW_IF_VELOCIT from successive tick deltas; seeded by
+  // used to compute HW_IF_VELOCITY from successive tick deltas; seeded by
   // on_activate()
   int32_t lastLeftTicks_ = 0;
   int32_t lastRightTicks_ = 0;
@@ -120,6 +121,10 @@ private:
   // @throws std::runtime_error naming which step failed
   void performHandshake_(std::chrono::milliseconds setupTimeout,
                          std::chrono::milliseconds ackTimeout);
+
+  // serialize and send an "M,..." velocity command to the esp32
+  // @throws std::runtime_error / asio exceptions on a send failure
+  void sendMotorCmd_(float leftVelCmd, float rightVelCmd);
 };
 
 } // namespace mobile_robot_hardware
