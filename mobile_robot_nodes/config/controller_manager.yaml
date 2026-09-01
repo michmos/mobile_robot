@@ -1,0 +1,7 @@
+# Minimal controller_manager config for exercising MobileRobotHardware on its
+# own, without any controllers loaded. update_rate matches the hardware's own
+# control_rate_hz param (see ros2_control.xacro) so read()/write() run at a
+# comparable pace to the esp32's own control loop.
+controller_manager:
+  ros__parameters:
+    update_rate: 200
