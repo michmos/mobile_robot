@@ -2,6 +2,7 @@
 
 #include <hardware_interface/lexical_casts.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
+#include <pluginlib/class_list_macros.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -530,3 +531,6 @@ return_type MobileRobotHardware::write(const rclcpp::Time &,
 
   return return_type::OK;
 }
+
+PLUGINLIB_EXPORT_CLASS(mobile_robot_hardware::MobileRobotHardware,
+                       hardware_interface::SystemInterface)
