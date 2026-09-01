@@ -390,3 +390,22 @@ CallbackReturn MobileRobotHardware::on_shutdown(
               serialPort_.c_str());
   return CallbackReturn::SUCCESS;
 }
+
+CallbackReturn MobileRobotHardware::on_error(
+    const rclcpp_lifecycle::State &previous_state) {
+  if (previous_state.label() == lifecycle_state_names::ACTIVE &&
+      on_deactivate(previous_state) != CallbackReturn::SUCCESS) {
+    RCLCPP_WARN(this->get_logger(), "Failed to stop motors during error recovery");
+  }
+  // unlike on_shutdown, run unconditionally: a failed on_configure() can
+  // leave the port open despite previous_state being UNCONFIGURED
+  if (on_cleanup(previous_state) != CallbackReturn::SUCCESS) {
+    RCLCPP_WARN(this->get_logger(),
+                "Failed to release resources during error recovery");
+  }
+
+  RCLCPP_INFO(this->get_logger(),
+              "Recovered from error, esp32 on %s is unconfigured",
+              serialPort_.c_str());
+  return CallbackReturn::SUCCESS;
+}
