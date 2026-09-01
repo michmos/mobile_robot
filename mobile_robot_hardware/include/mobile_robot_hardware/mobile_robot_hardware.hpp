@@ -67,7 +67,8 @@ public:
   hardware_interface::CallbackReturn
   on_cleanup(const rclcpp_lifecycle::State &previous_state) override;
 
-  // lifecycle: INACTIVE -> ACTIVE (enable motors, start reading real data)
+  // lifecycle: INACTIVE -> ACTIVE (reset command interfaces, seed encoder
+  // baseline for read())
   hardware_interface::CallbackReturn
   on_activate(const rclcpp_lifecycle::State &previous_state) override;
 
@@ -103,6 +104,12 @@ private:
 
   hardware_interface::CommandInterface::SharedPtr leftVelocityCommand_;
   hardware_interface::CommandInterface::SharedPtr rightVelocityCommand_;
+
+  // used to compute HW_IF_VELOCIT from successive tick deltas; seeded by
+  // on_activate()
+  int32_t lastLeftTicks_ = 0;
+  int32_t lastRightTicks_ = 0;
+  uint32_t lastSampleTimeUs_ = 0;
 
   // blocks up to `timeout` for a '\n'-terminated line in serial_.rxBuffer
   // @param line: initialized with retrieved line

@@ -315,7 +315,30 @@ MobileRobotHardware::on_cleanup(const rclcpp_lifecycle::State &) {
   leftVelocityCommand_.reset();
   rightVelocityCommand_.reset();
 
-  RCLCPP_INFO(this->get_logger(), "Closed serial port %s",
-              serialPort_.c_str());
+  RCLCPP_INFO(this->get_logger(), "Closed serial port %s", serialPort_.c_str());
+  return CallbackReturn::SUCCESS;
+}
+
+CallbackReturn
+MobileRobotHardware::on_activate(const rclcpp_lifecycle::State &) {
+  // reset command interfaces to safe value
+  if (!leftVelocityCommand_->set_value(0.0, true) ||
+      !rightVelocityCommand_->set_value(0.0, true)) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Failed to reset velocity command interfaces");
+    return CallbackReturn::ERROR;
+  }
+
+  // clear buffer so the first velocity sample in read() isn't computed against
+  // a stale timestamp
+  {
+    std::lock_guard<std::mutex> lock(serial_.rxMutex);
+    serial_.rxBuffer.clear();
+  }
+  lastLeftTicks_ = 0;
+  lastRightTicks_ = 0;
+  lastSampleTimeUs_ = 0;
+
+  RCLCPP_INFO(this->get_logger(), "Activated esp32 on %s", serialPort_.c_str());
   return CallbackReturn::SUCCESS;
 }
