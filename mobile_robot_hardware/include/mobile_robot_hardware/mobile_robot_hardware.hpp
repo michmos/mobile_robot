@@ -112,6 +112,8 @@ private:
   int32_t lastLeftTicks_ = 0;
   int32_t lastRightTicks_ = 0;
   uint32_t lastSampleTimeUs_ = 0;
+  // false until read() has consumed a first sample after on_activate()
+  bool hasEncoderBaseline_ = false;
 
   // blocks up to `timeout` for a '\n'-terminated line in serial_.rxBuffer
   // @param line: initialized with retrieved line

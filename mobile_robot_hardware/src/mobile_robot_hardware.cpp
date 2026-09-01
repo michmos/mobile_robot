@@ -4,6 +4,7 @@
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
@@ -176,6 +177,35 @@ std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
          "\n";
 }
 
+// E,<left_ticks>,<right_ticks>,<us>\n - see esp32_firmware/inc/Messages.hpp
+// EncoderData; line has already had its trailing '\n' stripped by readLine_
+// @throws std::runtime_error if the line is malformed
+void parseEncoderReport(const std::string &line, int32_t &leftTicks,
+                        int32_t &rightTicks, uint32_t &timestampUs) {
+  const size_t p1 = line.find(',');
+  const size_t p2 =
+      p1 == std::string::npos ? std::string::npos : line.find(',', p1 + 1);
+  const size_t p3 =
+      p2 == std::string::npos ? std::string::npos : line.find(',', p2 + 1);
+  if (p1 == std::string::npos || p2 == std::string::npos ||
+      p3 == std::string::npos || line.substr(0, p1) != "E") {
+    throw std::runtime_error("malformed encoder report: '" + line + "'");
+  }
+
+  try {
+    leftTicks = std::stol(line.substr(p1 + 1, p2 - p1 - 1));
+    rightTicks = std::stol(line.substr(p2 + 1, p3 - p2 - 1));
+    timestampUs = static_cast<uint32_t>(std::stoul(line.substr(p3 + 1)));
+  } catch (const std::exception &e) {
+    throw std::runtime_error("malformed encoder report: '" + line +
+                             "': " + e.what());
+  }
+}
+
+float ticksToRad(int32_t ticks, float ticksPerWheelRev) {
+  return (ticks * 2.0f * static_cast<float>(M_PI)) / ticksPerWheelRev;
+}
+
 } // namespace
 
 CallbackReturn
@@ -344,6 +374,7 @@ MobileRobotHardware::on_activate(const rclcpp_lifecycle::State &) {
   lastLeftTicks_ = 0;
   lastRightTicks_ = 0;
   lastSampleTimeUs_ = 0;
+  hasEncoderBaseline_ = false;
 
   RCLCPP_INFO(this->get_logger(), "Activated esp32 on %s", serialPort_.c_str());
   return CallbackReturn::SUCCESS;
@@ -391,11 +422,12 @@ CallbackReturn MobileRobotHardware::on_shutdown(
   return CallbackReturn::SUCCESS;
 }
 
-CallbackReturn MobileRobotHardware::on_error(
-    const rclcpp_lifecycle::State &previous_state) {
+CallbackReturn
+MobileRobotHardware::on_error(const rclcpp_lifecycle::State &previous_state) {
   if (previous_state.label() == lifecycle_state_names::ACTIVE &&
       on_deactivate(previous_state) != CallbackReturn::SUCCESS) {
-    RCLCPP_WARN(this->get_logger(), "Failed to stop motors during error recovery");
+    RCLCPP_WARN(this->get_logger(),
+                "Failed to stop motors during error recovery");
   }
   // unlike on_shutdown, run unconditionally: a failed on_configure() can
   // leave the port open despite previous_state being UNCONFIGURED
@@ -408,6 +440,72 @@ CallbackReturn MobileRobotHardware::on_error(
               "Recovered from error, esp32 on %s is unconfigured",
               serialPort_.c_str());
   return CallbackReturn::SUCCESS;
+}
+
+return_type MobileRobotHardware::read(const rclcpp::Time &,
+                                      const rclcpp::Duration &) {
+  auto warnIfFailed = [this](bool ok, const char *what) {
+    if (!ok) {
+      RCLCPP_WARN(this->get_logger(), "Could not update %s state interface",
+                  what);
+    }
+  };
+
+  std::string line;
+  // 0ms timeout makes readLine_ non-blocking, draining whatever is already
+  // buffered instead of waiting for more to arrive
+  while (readLine_(line, std::chrono::milliseconds(0))) {
+    if (line.rfind("L,", 0) == 0) {
+      RCLCPP_INFO(this->get_logger(), "esp32: %s", line.c_str() + 2);
+      continue;
+    }
+    if (line.rfind("E,", 0) != 0) {
+      continue; // skip non encoder data
+    }
+
+    // parse line
+    int32_t leftTicks, rightTicks;
+    uint32_t timestampUs;
+    try {
+      parseEncoderReport(line, leftTicks, rightTicks, timestampUs);
+    } catch (const std::exception &e) {
+      RCLCPP_WARN(this->get_logger(), "%s", e.what());
+      continue;
+    }
+
+    // set position
+    warnIfFailed(leftPositionState_->set_value(
+                     ticksToRad(leftTicks, config_.ticks_per_wheel_rev)),
+                 "left position");
+    warnIfFailed(rightPositionState_->set_value(
+                     ticksToRad(rightTicks, config_.ticks_per_wheel_rev)),
+                 "right position");
+
+    // set velocity
+    if (hasEncoderBaseline_) {
+      // uint32_t subtraction wraps correctly
+      const float dt_s = (timestampUs - lastSampleTimeUs_) * 1e-6f;
+      if (dt_s > 0.0f) {
+        float leftVelocity = ticksToRad(leftTicks - lastLeftTicks_,
+                                        config_.ticks_per_wheel_rev) /
+                             dt_s;
+        float rightVelocity = ticksToRad(rightTicks - lastRightTicks_,
+                                         config_.ticks_per_wheel_rev) /
+                              dt_s;
+        warnIfFailed(leftVelocityState_->set_value(leftVelocity),
+                     "left velocity");
+        warnIfFailed(rightVelocityState_->set_value(rightVelocity),
+                     "right velocity");
+      }
+    }
+
+    lastLeftTicks_ = leftTicks;
+    lastRightTicks_ = rightTicks;
+    lastSampleTimeUs_ = timestampUs;
+    hasEncoderBaseline_ = true;
+  }
+
+  return return_type::OK;
 }
 
 return_type MobileRobotHardware::write(const rclcpp::Time &,
