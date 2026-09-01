@@ -409,3 +409,26 @@ CallbackReturn MobileRobotHardware::on_error(
               serialPort_.c_str());
   return CallbackReturn::SUCCESS;
 }
+
+return_type MobileRobotHardware::write(const rclcpp::Time &,
+                                       const rclcpp::Duration &) {
+  // non-blocking: a realtime write() must not wait on a lock
+  const auto leftCmd = leftVelocityCommand_->get_optional<double>();
+  const auto rightCmd = rightVelocityCommand_->get_optional<double>();
+  if (!leftCmd.has_value() || !rightCmd.has_value()) {
+    RCLCPP_WARN(this->get_logger(),
+                "Could not read velocity command interfaces, skipping write");
+    return return_type::OK;
+  }
+
+  try {
+    sendMotorCmd_(static_cast<float>(*leftCmd), static_cast<float>(*rightCmd));
+  } catch (const std::exception &e) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Failed to send motor command to esp32 on '%s': %s",
+                 serialPort_.c_str(), e.what());
+    return return_type::ERROR;
+  }
+
+  return return_type::OK;
+}
