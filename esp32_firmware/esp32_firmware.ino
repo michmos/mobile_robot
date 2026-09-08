@@ -138,6 +138,7 @@ void sendSensorData(const EncoderSample& e) {
 //////////////////////////////////////////////////////////////////////////////////
 
 // adopt a newly received configuration into g_config
+// send ACK on valid new config
 // @return: true if a new configuration was applied
 bool updateConfig() {
   msgs::Config received = g_sc.getConfig();
