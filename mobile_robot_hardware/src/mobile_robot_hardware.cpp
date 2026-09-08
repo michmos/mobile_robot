@@ -203,8 +203,8 @@ void parseEncoderReport(const std::string &line, int32_t &leftTicks,
   }
 }
 
-float ticksToRad(int32_t ticks, float ticksPerWheelRev) {
-  return (ticks * 2.0f * static_cast<float>(M_PI)) / ticksPerWheelRev;
+double ticksToRad(int32_t ticks, float ticksPerWheelRev) {
+  return (ticks * 2.0 * M_PI) / ticksPerWheelRev;
 }
 
 } // namespace
@@ -510,14 +510,14 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
     // set velocity
     if (hasEncoderBaseline_) {
       // uint32_t subtraction wraps correctly
-      const float dt_s = (timestampUs - lastSampleTimeUs_) * 1e-6f;
-      if (dt_s > 0.0f) {
-        float leftVelocity = ticksToRad(leftTicks - lastLeftTicks_,
-                                        config_.ticks_per_wheel_rev) /
-                             dt_s;
-        float rightVelocity = ticksToRad(rightTicks - lastRightTicks_,
+      const double dt_s = (timestampUs - lastSampleTimeUs_) * 1e-6;
+      if (dt_s > 0.0) {
+        double leftVelocity = ticksToRad(leftTicks - lastLeftTicks_,
                                          config_.ticks_per_wheel_rev) /
                               dt_s;
+        double rightVelocity = ticksToRad(rightTicks - lastRightTicks_,
+                                          config_.ticks_per_wheel_rev) /
+                               dt_s;
         warnIfFailed(leftVelocityState_->set_value(leftVelocity),
                      "left velocity");
         warnIfFailed(rightVelocityState_->set_value(rightVelocity),
