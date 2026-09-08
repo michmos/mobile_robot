@@ -1,0 +1,11 @@
+<library path="mobile_robot_controller">
+  <class name="mobile_robot_controller/MobileRobotController"
+         type="mobile_robot_controller::MobileRobotController"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Differential-drive controller for the mobile_robot: converts cmd_vel
+      into left/right wheel velocity commands and publishes odometry from the
+      wheel position state interfaces.
+    </description>
+  </class>
+</library>
