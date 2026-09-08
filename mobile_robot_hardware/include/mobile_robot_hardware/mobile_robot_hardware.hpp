@@ -59,30 +59,41 @@ public:
   on_init(const hardware_interface::HardwareComponentInterfaceParams &params)
       override;
 
-  // lifecycle: UNCONFIGURED -> INACTIVE (open serial port)
+  // lifecycle: UNCONFIGURED -> INACTIVE
+  // - validate and cash interface handles
+  // - open serial port
+  // - perform handshake
   hardware_interface::CallbackReturn
   on_configure(const rclcpp_lifecycle::State &previous_state) override;
 
   // lifecycle: INACTIVE -> UNCONFIGURED (close serial port)
+  // - close serial
+  // - clear serial buffer
+  // - release interface handles
   hardware_interface::CallbackReturn
   on_cleanup(const rclcpp_lifecycle::State &previous_state) override;
 
-  // lifecycle: INACTIVE -> ACTIVE (reset command interfaces, seed encoder
-  // baseline for read())
+  // lifecycle: INACTIVE -> ACTIVE
+  // - init command interfaces to safe values
+  // - clear serial buffer
   hardware_interface::CallbackReturn
   on_activate(const rclcpp_lifecycle::State &previous_state) override;
 
-  // lifecycle: ACTIVE -> INACTIVE (send stop command directly, since write()
-  // won't be called anymore)
+  // lifecycle: ACTIVE -> INACTIVE
+  // - send stop command
   hardware_interface::CallbackReturn
   on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
 
   // lifecycle: any -> FINALIZED (final teardown; reuses on_deactivate()/
   // on_cleanup() since this can be reached directly from any state)
+  // - call on_deactivate() if previously active
+  // - call on_cleanup() if previously active or inactive
   hardware_interface::CallbackReturn
   on_shutdown(const rclcpp_lifecycle::State &previous_state) override;
 
   // lifecycle: any -> UNCONFIGURED via error transition
+  // - call on_deactivate() if previously active
+  // - call on_cleanup()
   hardware_interface::CallbackReturn
   on_error(const rclcpp_lifecycle::State &previous_state) override;
 
