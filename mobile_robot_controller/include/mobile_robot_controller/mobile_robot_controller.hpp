@@ -12,14 +12,14 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace mobile_robot_controller {
 
 class MobileRobotController : public controller_interface::ControllerInterface {
 private:
-  const std::vector<std::string> expected_joints_ = {"left_wheel_joint",
-                                                      "right_wheel_joint"};
+  // joint names, read from ROS params in on_configure()
+  std::string leftWheelJointName_;
+  std::string rightWheelJointName_;
 
   // kinematic parameters, read from ROS params in on_configure()
   double wheelSeparation_ = 0.0;
@@ -55,7 +55,7 @@ private:
 public:
   MobileRobotController() = default;
 
-  // declare joint/wheel_separation/wheel_radius parameters
+  // declare joint name/wheel_separation/wheel_radius parameters
   controller_interface::CallbackReturn on_init() override;
 
   // which command interfaces this controller claims (left/right wheel
@@ -69,7 +69,7 @@ public:
   state_interface_configuration() const override;
 
   // lifecycle: INACTIVE -> INACTIVE (also reached from UNCONFIGURED)
-  // - read kinematic parameters
+  // - read joint name and kinematic parameters
   // - resolve interface indices
   // - set up cmd_vel subscription and odom/tf publishers
   controller_interface::CallbackReturn
