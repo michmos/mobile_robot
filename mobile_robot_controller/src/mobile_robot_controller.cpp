@@ -1,7 +1,11 @@
 #include "mobile_robot_controller/mobile_robot_controller.hpp"
+#include "nav_msgs/msg/odometry.hpp"
+#include "tf2_msgs/msg/tf_message.hpp"
 
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
+#include <memory>
 #include <pluginlib/class_list_macros.hpp>
+#include <realtime_tools/realtime_publisher.hpp>
 
 using namespace mobile_robot_controller;
 
@@ -40,7 +44,41 @@ MobileRobotController::state_interface_configuration() const {
 
 controller_interface::CallbackReturn
 MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
-  // TODO: implement
+  // read parameter values
+  leftWheelJointName_ =
+      get_node()->get_parameter("left_wheel_joint_name").as_string();
+  rightWheelJointName_ =
+      get_node()->get_parameter("right_wheel_joint_name").as_string();
+  wheelSeparation_ = get_node()->get_parameter("wheel_separation").as_double();
+  wheelRadius_ = get_node()->get_parameter("wheel_radius").as_double();
+
+  // validate params
+  if (leftWheelJointName_.empty() || rightWheelJointName_.empty()) {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "left_wheel_joint_name/right_wheel_joint_name must not be "
+                 "empty");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  if (wheelSeparation_ <= 0.0 || wheelRadius_ <= 0.0) {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "wheel_separation/wheel_radius must be > 0");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+
+  // set up subscriptions and publishers
+  cmdVelSub_ = get_node()->create_subscription<geometry_msgs::msg::Twist>(
+      "cmd_vel", 10, [this](std::shared_ptr<geometry_msgs::msg::Twist> msg) {
+        cmdVelCallback_(msg);
+      });
+  odomPub_ = get_node()->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
+  realtimeOdomPub_ = std::make_unique<
+      realtime_tools::RealtimePublisher<nav_msgs::msg::Odometry>>(odomPub_);
+
+  // absolute topic: tf must be global, not namespaced under this controller
+  tfPub_ = get_node()->create_publisher<tf2_msgs::msg::TFMessage>("/tf", 10);
+  realtimeTfPub_ = std::make_unique<
+      realtime_tools::RealtimePublisher<tf2_msgs::msg::TFMessage>>(tfPub_);
+
   return controller_interface::CallbackReturn::SUCCESS;
 }
 

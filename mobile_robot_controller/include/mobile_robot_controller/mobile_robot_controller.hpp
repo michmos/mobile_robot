@@ -4,9 +4,9 @@
 #include <controller_interface/controller_interface.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <rclcpp_lifecycle/state.hpp>
 #include <realtime_tools/realtime_buffer.hpp>
 #include <realtime_tools/realtime_publisher.hpp>
-#include <rclcpp_lifecycle/state.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
 
 #include <memory>
@@ -24,14 +24,6 @@ private:
   // kinematic parameters, read from ROS params in on_configure()
   double wheelSeparation_ = 0.0;
   double wheelRadius_ = 0.0;
-
-  // indices into command_interfaces_/state_interfaces_ (base class members),
-  // resolved by name in on_configure(); command_interfaces_.size()/
-  // state_interfaces_.size() means "not found"
-  size_t leftWheelCommandIdx_ = 0;
-  size_t rightWheelCommandIdx_ = 0;
-  size_t leftWheelPositionIdx_ = 0;
-  size_t rightWheelPositionIdx_ = 0;
 
   // dead-reckoned pose, integrated in updateOdometry_()
   double x_ = 0.0;
@@ -69,8 +61,7 @@ public:
   state_interface_configuration() const override;
 
   // lifecycle: INACTIVE -> INACTIVE (also reached from UNCONFIGURED)
-  // - read joint name and kinematic parameters
-  // - resolve interface indices
+  // - read and validate joint name and kinematic parameters
   // - set up cmd_vel subscription and odom/tf publishers
   controller_interface::CallbackReturn
   on_configure(const rclcpp_lifecycle::State &previous_state) override;
