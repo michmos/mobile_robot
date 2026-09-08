@@ -24,14 +24,18 @@ controller_interface::CallbackReturn MobileRobotController::on_init() {
 
 controller_interface::InterfaceConfiguration
 MobileRobotController::command_interface_configuration() const {
-  // TODO: implement
-  return controller_interface::InterfaceConfiguration{};
+  // individual = claim only requested interfaces - not all
+  return {controller_interface::interface_configuration_type::INDIVIDUAL,
+          {leftWheelJointName_ + "/" + hardware_interface::HW_IF_VELOCITY,
+           rightWheelJointName_ + "/" + hardware_interface::HW_IF_VELOCITY}};
 }
 
 controller_interface::InterfaceConfiguration
 MobileRobotController::state_interface_configuration() const {
-  // TODO: implement
-  return controller_interface::InterfaceConfiguration{};
+  // individual = claim only requested interfaces - not all
+  return {controller_interface::interface_configuration_type::INDIVIDUAL,
+          {leftWheelJointName_ + "/" + hardware_interface::HW_IF_POSITION,
+           rightWheelJointName_ + "/" + hardware_interface::HW_IF_POSITION}};
 }
 
 controller_interface::CallbackReturn
