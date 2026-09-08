@@ -6,7 +6,19 @@
 using namespace mobile_robot_controller;
 
 controller_interface::CallbackReturn MobileRobotController::on_init() {
-  // TODO: implement
+  // actual values will be read in on_configure, since on_init() can run
+  // before parameter overrides from launch file have settled
+  try {
+    get_node()->declare_parameter<std::string>("left_wheel_joint_name", "");
+    get_node()->declare_parameter<std::string>("right_wheel_joint_name", "");
+    get_node()->declare_parameter<double>("wheel_separation", 0.0);
+    get_node()->declare_parameter<double>("wheel_radius", 0.0);
+  } catch (const std::exception &e) {
+    RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s",
+                 e.what());
+    return controller_interface::CallbackReturn::ERROR;
+  }
+
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -22,20 +34,20 @@ MobileRobotController::state_interface_configuration() const {
   return controller_interface::InterfaceConfiguration{};
 }
 
-controller_interface::CallbackReturn MobileRobotController::on_configure(
-    const rclcpp_lifecycle::State &) {
+controller_interface::CallbackReturn
+MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
   // TODO: implement
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::CallbackReturn MobileRobotController::on_activate(
-    const rclcpp_lifecycle::State &) {
+controller_interface::CallbackReturn
+MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
   // TODO: implement
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::CallbackReturn MobileRobotController::on_deactivate(
-    const rclcpp_lifecycle::State &) {
+controller_interface::CallbackReturn
+MobileRobotController::on_deactivate(const rclcpp_lifecycle::State &) {
   // TODO: implement
   return controller_interface::CallbackReturn::SUCCESS;
 }
