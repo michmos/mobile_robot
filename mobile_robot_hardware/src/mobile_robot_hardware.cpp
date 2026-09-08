@@ -250,30 +250,58 @@ bool MobileRobotHardware::readLine_(std::string &line,
   return true;
 }
 
+template <typename Predicate>
+std::optional<std::string>
+MobileRobotHardware::readLineUntil_(std::chrono::milliseconds timeout,
+                                    Predicate matches) {
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  std::string line;
+  while (true) {
+    const auto remaining =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now());
+    if (remaining <= std::chrono::milliseconds(0) ||
+        !readLine_(line, remaining)) {
+      return {};
+    }
+    if (matches(line)) {
+      return line;
+    }
+  }
+}
+
 void MobileRobotHardware::performHandshake_(
     std::chrono::milliseconds setupTimeout,
     std::chrono::milliseconds ackTimeout) {
-  std::string line;
-
-  if (!readLine_(line, setupTimeout) || line != "S,SETUP") {
-    throw std::runtime_error("timed out waiting for the esp32's SETUP event");
+  // check for setup event
+  {
+    auto ret = readLineUntil_(setupTimeout, [](const std::string &line) {
+      return line == "S,SETUP";
+    });
+    if (!ret.has_value()) {
+      RCLCPP_WARN(this->get_logger(), "No SETUP message received from esp32");
+    }
   }
 
+  // send config
   const std::string configLine = serializeConfig(config_);
   serial_.port->send(
       std::vector<uint8_t>(configLine.begin(), configLine.end()));
 
-  if (!readLine_(line, ackTimeout)) {
+  // wait for acknowledgment
+  auto ret = readLineUntil_(ackTimeout, [](const std::string &line) {
+    return line == "S,ACK" || line.rfind("S,NACK,", 0) == 0;
+  });
+  if (!ret.has_value()) {
     throw std::runtime_error(
         "timed out waiting for the esp32 to acknowledge the configuration");
   }
-  if (line.rfind("S,NACK,", 0) == 0) {
+  if (ret.value().rfind("S,NACK,", 0) == 0) {
     throw std::runtime_error("esp32 rejected configuration field '" +
-                             line.substr(7) + "'");
+                             ret.value().substr(7) + "'");
   }
-  if (line != "S,ACK") {
-    throw std::runtime_error("unexpected response from esp32: '" + line + "'");
-  }
+  RCLCPP_INFO(this->get_logger(), "esp32 on %s acknowledged configuration",
+              serialPort_.c_str());
 }
 
 CallbackReturn
@@ -320,9 +348,6 @@ MobileRobotHardware::on_configure(const rclcpp_lifecycle::State &) {
                  serialPort_.c_str(), e.what());
     return CallbackReturn::ERROR;
   }
-
-  RCLCPP_INFO(this->get_logger(), "esp32 on %s acknowledged configuration",
-              serialPort_.c_str());
   return CallbackReturn::SUCCESS;
 }
 

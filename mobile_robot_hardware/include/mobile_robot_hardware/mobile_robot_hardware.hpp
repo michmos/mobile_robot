@@ -131,6 +131,12 @@ private:
   // @param timeout: time to wait for '\n'
   bool readLine_(std::string &line, std::chrono::milliseconds timeout);
 
+  // reads lines, discarding any that don't satisfy `matches`, until one does
+  // or `timeout` elapses
+  template <typename Predicate>
+  std::optional<std::string> readLineUntil_(std::chrono::milliseconds timeout,
+                                            Predicate matches);
+
   // esp32 handshake: wait for its SETUP event, send config_, wait for ACK/NACK
   // @throws std::runtime_error naming which step failed
   void performHandshake_(std::chrono::milliseconds setupTimeout,
