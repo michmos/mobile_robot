@@ -26,9 +26,11 @@ private:
   double wheelRadius_ = 0.0;
 
   // dead-reckoned pose, integrated in updateOdometry_()
-  double x_ = 0.0;
-  double y_ = 0.0;
-  double heading_ = 0.0;
+  struct Pose {
+    double x = 0.0;
+    double y = 0.0;
+    double heading = 0.0;
+  } pose_;
 
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSub_;
   // written by cmdVelCallback_() (subscription thread), read by update()
@@ -91,12 +93,12 @@ private:
   std::pair<double, double> inverseKinematics_(double linearVel,
                                                double angularVel) const;
 
-  // forward kinematics: integrates x_/y_/heading_ from the wheel position
+  // forward kinematics: integrates pose_ from the wheel position
   // delta since the last call
   void updateOdometry_(double leftWheelPos, double rightWheelPos,
                        const rclcpp::Duration &period);
 
-  // publishes the current x_/y_/heading_ as nav_msgs/Odometry and the
+  // publishes the current pose_ as nav_msgs/Odometry and the
   // odom -> base_link tf transform
   void publishOdometry_(const rclcpp::Time &time);
 };
