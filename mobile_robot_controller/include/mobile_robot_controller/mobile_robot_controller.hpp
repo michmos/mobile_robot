@@ -32,6 +32,8 @@ private:
     double heading = 0.0;
   } pose_;
 
+  enum JointSides { LEFT = 0, RIGHT = 1 };
+
   struct JointPose {
     double left = 0.0;
     double right = 0.0;
