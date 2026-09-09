@@ -1,4 +1,5 @@
 #include "mobile_robot_controller/mobile_robot_controller.hpp"
+#include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
@@ -84,7 +85,16 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
 
 controller_interface::CallbackReturn
 MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
-  // TODO: implement
+  // leave pose_ untouched to ignore any movement during deactivation
+
+  // mark as outdated, so update() ignores the first position delta
+  // for pose updates, ignoring any movement during deactivation
+  lastJointPose_.outdated = true;
+
+  // set cmd_vel buffer to safe command - Twist's default constructor already
+  // zero-initializes linear/angular, no need to set fields individually
+  cmdVelBuffer_.initRT(std::make_shared<geometry_msgs::msg::Twist>());
+
   return controller_interface::CallbackReturn::SUCCESS;
 }
 

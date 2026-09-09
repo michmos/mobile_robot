@@ -32,6 +32,12 @@ private:
     double heading = 0.0;
   } pose_;
 
+  struct JointPose {
+    double left = 0.0;
+    double right = 0.0;
+    bool outdated = true;
+  } lastJointPose_;
+
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSub_;
   // written by cmdVelCallback_() (subscription thread), read by update()
   // (realtime thread)
