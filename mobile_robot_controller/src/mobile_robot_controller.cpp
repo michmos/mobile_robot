@@ -108,7 +108,13 @@ MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
 
 controller_interface::CallbackReturn
 MobileRobotController::on_deactivate(const rclcpp_lifecycle::State &) {
-  // TODO: implement
+  if (!command_interfaces_[LEFT].set_value(0.0) ||
+      !command_interfaces_[RIGHT].set_value(0.0)) {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "Failed to write zero velocity command on deactivate");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
