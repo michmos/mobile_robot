@@ -165,8 +165,46 @@ void MobileRobotController::updateOdometry_(double leftJointPose,
   lastJointPose_.right = rightJointPose;
 }
 
-void MobileRobotController::publishOdometry_(const rclcpp::Time &) {
-  // TODO: implement
+void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
+  auto odomMsg = nav_msgs::msg::Odometry();
+
+  odomMsg.header.stamp = time;
+  odomMsg.header.frame_id = "odom";
+  odomMsg.child_frame_id = "base_link";
+
+  // pure yaw rotation -> quaternion via the half-angle formula, shared by
+  // both the odometry message and the tf transform below
+  double qz = sin(pose_.heading / 2.0);
+  double qw = cos(pose_.heading / 2.0);
+
+  odomMsg.pose.pose.position.x = pose_.x;
+  odomMsg.pose.pose.position.y = pose_.y;
+  odomMsg.pose.pose.orientation.x = 0.0;
+  odomMsg.pose.pose.orientation.y = 0.0;
+  odomMsg.pose.pose.orientation.z = qz;
+  odomMsg.pose.pose.orientation.w = qw;
+  // odomMsg.pose.covariance; //TODO: add covariance
+
+  odomMsg.twist.twist.linear.x = twist_.linearVelocity;
+  odomMsg.twist.twist.angular.z = twist_.angularVelocity;
+  // odomMsg.twist.covariance; // TODO: add covariance
+
+  realtimeOdomPub_->try_publish(odomMsg);
+
+  auto tfMsg = tf2_msgs::msg::TFMessage();
+  tfMsg.transforms.resize(1);
+  tfMsg.transforms[0].header.stamp = time;
+  tfMsg.transforms[0].header.frame_id = "odom";
+  tfMsg.transforms[0].child_frame_id = "base_link";
+  tfMsg.transforms[0].transform.translation.x = pose_.x;
+  tfMsg.transforms[0].transform.translation.y = pose_.y;
+  tfMsg.transforms[0].transform.translation.z = 0.0;
+  tfMsg.transforms[0].transform.rotation.x = 0.0;
+  tfMsg.transforms[0].transform.rotation.y = 0.0;
+  tfMsg.transforms[0].transform.rotation.z = qz;
+  tfMsg.transforms[0].transform.rotation.w = qw;
+
+  realtimeTfPub_->try_publish(tfMsg);
 }
 
 PLUGINLIB_EXPORT_CLASS(mobile_robot_controller::MobileRobotController,
