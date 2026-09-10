@@ -32,6 +32,11 @@ private:
     double heading = 0.0;
   } pose_;
 
+  struct Twist {
+    double linearVelocity = 0.0;
+    double angularVelocity = 0.0;
+  } twist_;
+
   enum JointSides { LEFT = 0, RIGHT = 1 };
 
   struct JointPose {
@@ -101,8 +106,8 @@ private:
   std::pair<double, double> inverseKinematics_(double linearVel,
                                                double angularVel) const;
 
-  // forward kinematics: integrates pose_ from the wheel position
-  // delta since the last call
+  // forward kinematics: integrates pose_ and updates twist_
+  // from the wheel position delta since the last call
   void updateOdometry_(double leftWheelPos, double rightWheelPos,
                        const rclcpp::Duration &period);
 

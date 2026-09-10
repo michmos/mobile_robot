@@ -3,6 +3,7 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
+#include <controller_interface/controller_interface_base.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <memory>
 #include <pluginlib/class_list_macros.hpp>
@@ -135,9 +136,33 @@ MobileRobotController::inverseKinematics_(double, double) const {
   return {0.0, 0.0};
 }
 
-void MobileRobotController::updateOdometry_(double, double,
-                                            const rclcpp::Duration &) {
-  // TODO: implement
+void MobileRobotController::updateOdometry_(double leftJointPose,
+                                            double rightJointPose,
+                                            const rclcpp::Duration &period) {
+  if (!lastJointPose_.outdated) {
+    double distanceLeft = (leftJointPose - lastJointPose_.left) * wheelRadius_;
+    double distanceRight =
+        (rightJointPose - lastJointPose_.right) * wheelRadius_;
+    double distanceCenter = (distanceLeft + distanceRight) / 2.0;
+    double deltaHeading = (distanceRight - distanceLeft) / wheelSeparation_;
+
+    // mid point approx to get new pose
+    double headingMid = pose_.heading + deltaHeading / 2.0;
+    pose_.x += distanceCenter * cos(headingMid);
+    pose_.y += distanceCenter * sin(headingMid);
+    pose_.heading += deltaHeading;
+
+    // get velocities - only valid if the period was non-zero
+    double dt = period.seconds();
+    if (dt > 0.0) {
+      twist_.linearVelocity = distanceCenter / dt;
+      twist_.angularVelocity = deltaHeading / dt;
+    }
+  }
+
+  lastJointPose_.outdated = false;
+  lastJointPose_.left = leftJointPose;
+  lastJointPose_.right = rightJointPose;
 }
 
 void MobileRobotController::publishOdometry_(const rclcpp::Time &) {
