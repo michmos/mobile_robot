@@ -9,6 +9,7 @@
 #include <realtime_tools/realtime_publisher.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
 
+#include <array>
 #include <memory>
 #include <string>
 #include <utility>
@@ -28,12 +29,25 @@ private:
   double wheelSeparation_ = 0.0;
   double wheelRadius_ = 0.0;
 
+  struct Variances {
+    double positionPerMeter = 0.0;
+    double yawPerRadian = 0.0;
+    double linearVelocity = 0.0;
+    double angularVelocity = 0.0;
+  } variances_;
+
   // dead-reckoned pose, integrated in updateOdometry_()
   struct Pose {
     double x = 0.0;
     double y = 0.0;
     double heading = 0.0;
   } pose_;
+
+  // accumulated pose variance - x and y share one value
+  struct PoseVariance {
+    double position = 0.0;
+    double yaw = 0.0;
+  } poseVariance_;
 
   struct Twist {
     double linearVelocity = 0.0;
@@ -117,6 +131,15 @@ private:
   // publishes the current pose_ as nav_msgs/Odometry and the
   // odom -> base_link tf transform
   void publishOdometry_(const rclcpp::Time &time);
+
+  // fills the diagonal of a 6x6 row-major covariance array (ordered
+  // [x, y, z, roll, pitch, yaw], or [vx, vy, vz, wx, wy, wz] for twist)
+  // from per-axis variances, leaving all covariances (off-diagonal entries)
+  // at their default of zero
+  static void setDiagonalCovariance_(std::array<double, 36> &covariance,
+                                     double xVariance, double yVariance,
+                                     double zVariance, double rollVariance,
+                                     double pitchVariance, double yawVariance);
 };
 
 } // namespace mobile_robot_controller

@@ -4,6 +4,7 @@
 #include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
+#include <cmath>
 #include <controller_interface/controller_interface_base.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <memory>
@@ -20,6 +21,10 @@ controller_interface::CallbackReturn MobileRobotController::on_init() {
     get_node()->declare_parameter<std::string>("right_wheel_joint_name", "");
     get_node()->declare_parameter<double>("wheel_separation", 0.0);
     get_node()->declare_parameter<double>("wheel_radius", 0.0);
+    get_node()->declare_parameter<double>("position_variance_per_meter", 0.0);
+    get_node()->declare_parameter<double>("yaw_variance_per_radian", 0.0);
+    get_node()->declare_parameter<double>("linear_velocity_variance", 0.0);
+    get_node()->declare_parameter<double>("angular_velocity_variance", 0.0);
   } catch (const std::exception &e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s",
                  e.what());
@@ -62,6 +67,14 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
       get_node()->get_parameter("right_wheel_joint_name").as_string();
   wheelSeparation_ = get_node()->get_parameter("wheel_separation").as_double();
   wheelRadius_ = get_node()->get_parameter("wheel_radius").as_double();
+  variances_.positionPerMeter =
+      get_node()->get_parameter("position_variance_per_meter").as_double();
+  variances_.yawPerRadian =
+      get_node()->get_parameter("yaw_variance_per_radian").as_double();
+  variances_.linearVelocity =
+      get_node()->get_parameter("linear_velocity_variance").as_double();
+  variances_.angularVelocity =
+      get_node()->get_parameter("angular_velocity_variance").as_double();
 
   // validate params
   if (leftWheelJointName_.empty() || rightWheelJointName_.empty()) {
@@ -73,6 +86,14 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
   if (wheelSeparation_ <= 0.0 || wheelRadius_ <= 0.0) {
     RCLCPP_ERROR(get_node()->get_logger(),
                  "wheel_separation/wheel_radius must be > 0");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  if (variances_.positionPerMeter <= 0.0 || variances_.yawPerRadian <= 0.0 ||
+      variances_.linearVelocity <= 0.0 || variances_.angularVelocity <= 0.0) {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "position_variance_per_meter/yaw_variance_per_radian/"
+                 "linear_velocity_variance/angular_velocity_variance must "
+                 "be > 0");
     return controller_interface::CallbackReturn::ERROR;
   }
 
@@ -184,6 +205,11 @@ void MobileRobotController::updateOdometry_(double leftJointPose,
     pose_.y += distanceCenter * sin(headingMid);
     pose_.heading += deltaHeading;
 
+    // increment pose variance by how far the robot actually moved this cycle
+    poseVariance_.position +=
+        variances_.positionPerMeter * std::fabs(distanceCenter);
+    poseVariance_.yaw += variances_.yawPerRadian * std::fabs(deltaHeading);
+
     // get velocities - only valid if the period was non-zero
     double dt = period.seconds();
     if (dt > 0.0) {
@@ -213,11 +239,24 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   odomMsg.pose.pose.orientation.y = 0.0;
   odomMsg.pose.pose.orientation.z = q.z();
   odomMsg.pose.pose.orientation.w = q.w();
-  // odomMsg.pose.covariance; //TODO: add covariance
 
   odomMsg.twist.twist.linear.x = twist_.linearVelocity;
   odomMsg.twist.twist.angular.z = twist_.angularVelocity;
-  // odomMsg.twist.covariance; // TODO: add covariance
+
+  // "negligible variance" placeholder for the degrees of freedom this
+  // planar robot cannot physically move - kept nonzero
+  // (rather than exactly 0) since some odometry consumers (e.g.
+  // robot_localization) treat an exact 0 variance ambiguously
+  constexpr double kNegligibleVariance = 1e-9;
+
+  setDiagonalCovariance_(odomMsg.pose.covariance, poseVariance_.position,
+                         poseVariance_.position, kNegligibleVariance,
+                         kNegligibleVariance, kNegligibleVariance,
+                         poseVariance_.yaw);
+  setDiagonalCovariance_(odomMsg.twist.covariance, variances_.linearVelocity,
+                         kNegligibleVariance, kNegligibleVariance,
+                         kNegligibleVariance, kNegligibleVariance,
+                         variances_.angularVelocity);
 
   realtimeOdomPub_->try_publish(odomMsg);
 
@@ -235,6 +274,19 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   tfMsg.transforms[0].transform.rotation.w = q.w();
 
   realtimeTfPub_->try_publish(tfMsg);
+}
+
+void MobileRobotController::setDiagonalCovariance_(
+    std::array<double, 36> &covariance, double xVariance, double yVariance,
+    double zVariance, double rollVariance, double pitchVariance,
+    double yawVariance) {
+  // ! one dimenstional array !
+  covariance[0] = xVariance;      // (0, 0)
+  covariance[7] = yVariance;      // (1, 1)
+  covariance[14] = zVariance;     // (2, 2)
+  covariance[21] = rollVariance;  // (3, 3)
+  covariance[28] = pitchVariance; // (4, 4)
+  covariance[35] = yawVariance;   // (5, 5)
 }
 
 PLUGINLIB_EXPORT_CLASS(mobile_robot_controller::MobileRobotController,
