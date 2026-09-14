@@ -100,6 +100,8 @@ MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
   // mark as outdated, so update() ignores the first position delta
   // for pose updates, ignoring any movement during deactivation
   lastJointPose_.outdated = true;
+  // reset twist so that no stale twist is published on reactivation
+  twist_ = {};
 
   // set cmd_vel buffer to safe command - Twist's default constructor already
   // zero-initializes linear/angular, no need to set fields individually
