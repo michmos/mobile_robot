@@ -18,6 +18,7 @@ find_package(realtime_tools REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_msgs REQUIRED)
+find_package(tf2 REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_controller.cpp
@@ -33,6 +34,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
   ${hardware_interface_TARGETS}
   rclcpp::rclcpp
   rclcpp_lifecycle::rclcpp_lifecycle
+  tf2::tf2
   ${pluginlib_TARGETS}
   ${realtime_tools_TARGETS}
   ${geometry_msgs_TARGETS}

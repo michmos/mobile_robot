@@ -1,6 +1,7 @@
 #include "mobile_robot_controller/mobile_robot_controller.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
 #include <controller_interface/controller_interface_base.hpp>
@@ -172,17 +173,15 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   odomMsg.header.frame_id = "odom";
   odomMsg.child_frame_id = "base_link";
 
-  // pure yaw rotation -> quaternion via the half-angle formula, shared by
-  // both the odometry message and the tf transform below
-  double qz = sin(pose_.heading / 2.0);
-  double qw = cos(pose_.heading / 2.0);
+  tf2::Quaternion q;
+  q.setRPY(0.0, 0.0, pose_.heading);
 
   odomMsg.pose.pose.position.x = pose_.x;
   odomMsg.pose.pose.position.y = pose_.y;
   odomMsg.pose.pose.orientation.x = 0.0;
   odomMsg.pose.pose.orientation.y = 0.0;
-  odomMsg.pose.pose.orientation.z = qz;
-  odomMsg.pose.pose.orientation.w = qw;
+  odomMsg.pose.pose.orientation.z = q.z();
+  odomMsg.pose.pose.orientation.w = q.w();
   // odomMsg.pose.covariance; //TODO: add covariance
 
   odomMsg.twist.twist.linear.x = twist_.linearVelocity;
@@ -201,8 +200,8 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   tfMsg.transforms[0].transform.translation.z = 0.0;
   tfMsg.transforms[0].transform.rotation.x = 0.0;
   tfMsg.transforms[0].transform.rotation.y = 0.0;
-  tfMsg.transforms[0].transform.rotation.z = qz;
-  tfMsg.transforms[0].transform.rotation.w = qw;
+  tfMsg.transforms[0].transform.rotation.z = q.z();
+  tfMsg.transforms[0].transform.rotation.w = q.w();
 
   realtimeTfPub_->try_publish(tfMsg);
 }
