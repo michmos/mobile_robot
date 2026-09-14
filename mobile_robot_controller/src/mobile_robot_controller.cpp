@@ -148,8 +148,8 @@ MobileRobotController::update(const rclcpp::Time &time,
 }
 
 void MobileRobotController::cmdVelCallback_(
-    const std::shared_ptr<geometry_msgs::msg::Twist>) {
-  // TODO: implement
+    const std::shared_ptr<geometry_msgs::msg::Twist> msg) {
+  cmdVelBuffer_.writeFromNonRT(msg);
 }
 
 std::pair<double, double>
