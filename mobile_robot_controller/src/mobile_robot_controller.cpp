@@ -121,8 +121,29 @@ MobileRobotController::on_deactivate(const rclcpp_lifecycle::State &) {
 }
 
 controller_interface::return_type
-MobileRobotController::update(const rclcpp::Time &, const rclcpp::Duration &) {
-  // TODO: implement
+MobileRobotController::update(const rclcpp::Time &time,
+                              const rclcpp::Duration &period) {
+  // read states
+  auto leftJointPose = state_interfaces_[LEFT].get_optional();
+  auto rightJointPose = state_interfaces_[RIGHT].get_optional();
+  if (!leftJointPose.has_value() || !rightJointPose.has_value()) {
+    RCLCPP_ERROR(get_node()->get_logger(), "update(): failed to read states");
+    return controller_interface::return_type::ERROR;
+  }
+
+  updateOdometry_(*leftJointPose, *rightJointPose, period);
+  publishOdometry_(time);
+
+  // write commands
+  auto t = cmdVelBuffer_.readFromRT();
+  auto cmds = inverseKinematics_(t->get()->linear.x, t->get()->angular.z);
+  if (!command_interfaces_[LEFT].set_value(cmds.first) ||
+      !command_interfaces_[RIGHT].set_value(cmds.second)) {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "update(): failed to write velocity command");
+    return controller_interface::return_type::ERROR;
+  }
+
   return controller_interface::return_type::OK;
 }
 
