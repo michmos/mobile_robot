@@ -17,6 +17,9 @@ namespace mobile_robot_controller {
 
 class MobileRobotController : public controller_interface::ControllerInterface {
 private:
+  const std::string odomFrameId_ = "odom";
+  const std::string baseFrameId_ = "base_link";
+
   // joint names, read from ROS params in on_configure()
   std::string leftWheelJointName_;
   std::string rightWheelJointName_;

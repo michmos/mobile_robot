@@ -201,8 +201,8 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   auto odomMsg = nav_msgs::msg::Odometry();
 
   odomMsg.header.stamp = time;
-  odomMsg.header.frame_id = "odom";
-  odomMsg.child_frame_id = "base_link";
+  odomMsg.header.frame_id = odomFrameId_;
+  odomMsg.child_frame_id = baseFrameId_;
 
   tf2::Quaternion q;
   q.setRPY(0.0, 0.0, pose_.heading);
@@ -224,8 +224,8 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   auto tfMsg = tf2_msgs::msg::TFMessage();
   tfMsg.transforms.resize(1);
   tfMsg.transforms[0].header.stamp = time;
-  tfMsg.transforms[0].header.frame_id = "odom";
-  tfMsg.transforms[0].child_frame_id = "base_link";
+  tfMsg.transforms[0].header.frame_id = odomFrameId_;
+  tfMsg.transforms[0].child_frame_id = baseFrameId_;
   tfMsg.transforms[0].transform.translation.x = pose_.x;
   tfMsg.transforms[0].transform.translation.y = pose_.y;
   tfMsg.transforms[0].transform.translation.z = 0.0;
