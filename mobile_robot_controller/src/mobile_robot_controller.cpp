@@ -153,9 +153,17 @@ void MobileRobotController::cmdVelCallback_(
 }
 
 std::pair<double, double>
-MobileRobotController::inverseKinematics_(double, double) const {
-  // TODO: implement
-  return {0.0, 0.0};
+MobileRobotController::inverseKinematics_(double linearVel,
+                                          double angularVel) const {
+  // velocity difference rule for rigid bodies
+  double leftWheelSpeed = linearVel - angularVel * wheelSeparation_ / 2.0;
+  double rightWheelSpeed = linearVel + angularVel * wheelSeparation_ / 2.0;
+
+  // convert wheel linear speed (m/s) to wheel angular velocity (rad/s)
+  double leftWheelVel = leftWheelSpeed / wheelRadius_;
+  double rightWheelVel = rightWheelSpeed / wheelRadius_;
+
+  return {leftWheelVel, rightWheelVel};
 }
 
 void MobileRobotController::updateOdometry_(double leftJointPose,
