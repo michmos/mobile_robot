@@ -1,7 +1,33 @@
-# Minimal controller_manager config for exercising MobileRobotHardware on its
-# own, without any controllers loaded. update_rate matches the hardware's own
-# control_rate_hz param (see ros2_control.xacro) so read()/write() run at a
-# comparable pace to the esp32's own control loop.
+# controller_manager config for MobileRobotHardware plus mobile_robot_controller.
+# update_rate matches the hardware's own control_rate_hz param (see
+# ros2_control.xacro) so read()/write() run at a comparable pace to the
+# esp32's own control loop.
 controller_manager:
   ros__parameters:
     update_rate: 200
+
+    mobile_robot_controller:
+      type: mobile_robot_controller/MobileRobotController
+
+mobile_robot_controller:
+  ros__parameters:
+    # joint names, from ros2_control.xacro
+    left_wheel_joint_name: left_wheel_joint
+    right_wheel_joint_name: right_wheel_joint
+
+    # kinematic parameters (m), from properties.xacro / mobile_robot.urdf.xacro:
+    wheel_separation: 0.12
+    wheel_radius: 0.0325
+
+    # velocity variance ((m/s)^2 / (rad/s)^2), estimated from the hardware's
+    # own encoder resolution and control rate
+    linear_velocity_variance: 0.0003
+    angular_velocity_variance: 0.08
+
+    # pose variance growth rate (m^2 per meter driven / rad^2 per radian
+    # turned)
+    # These starting values assume roughly 5cm of position drift and ~6 degrees of heading
+    # drift per meter/radian of travel - reasonable for a small robot with
+    # some slip, but a rough placeholder pending real tuning.
+    position_variance_per_meter: 0.0025
+    yaw_variance_per_radian: 0.01
