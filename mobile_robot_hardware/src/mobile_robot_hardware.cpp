@@ -397,8 +397,7 @@ MobileRobotHardware::on_activate(const rclcpp_lifecycle::State &) {
     std::lock_guard<std::mutex> lock(serial_.rxMutex);
     serial_.rxBuffer.clear();
   }
-  lastLeftTicks_ = 0;
-  lastRightTicks_ = 0;
+  ticks_ = Ticks{};
   lastSampleTimeUs_ = 0;
   hasEncoderBaseline_ = false;
 
@@ -409,6 +408,27 @@ MobileRobotHardware::on_activate(const rclcpp_lifecycle::State &) {
 void MobileRobotHardware::sendMotorCmd_(float leftVelCmd, float rightVelCmd) {
   const std::string cmd = serializeMotorCmd(leftVelCmd, rightVelCmd);
   serial_.port->send(std::vector<uint8_t>(cmd.begin(), cmd.end()));
+}
+
+void MobileRobotHardware::handleRestart_() {
+  RCLCPP_WARN(this->get_logger(),
+              "esp32 on %s sent a SETUP event while active, assuming it "
+              "restarted; resending configuration",
+              serialPort_.c_str());
+
+  ticks_.leftLast = 0;
+  ticks_.rightLast = 0;
+  hasEncoderBaseline_ = false;
+
+  try {
+    const std::string configLine = serializeConfig(config_);
+    serial_.port->send(
+        std::vector<uint8_t>(configLine.begin(), configLine.end()));
+  } catch (const std::exception &e) {
+    RCLCPP_ERROR(this->get_logger(),
+                 "Failed to resend configuration to esp32 on '%s': %s",
+                 serialPort_.c_str(), e.what());
+  }
 }
 
 CallbackReturn
@@ -484,9 +504,18 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
     if (line.rfind("L,", 0) == 0) {
       RCLCPP_INFO(this->get_logger(), "esp32: %s", line.c_str() + 2);
       continue;
-    }
-    if (line.rfind("E,", 0) != 0) {
-      continue; // skip non encoder data
+    } else if (line == "S,SETUP") {
+      handleRestart_();
+      continue;
+    } else if (line == "S,ACK") {
+      RCLCPP_INFO(this->get_logger(), "esp32 sent ACK");
+      continue;
+    } else if (line.rfind("S,NACK,", 0) == 0) {
+      RCLCPP_ERROR(this->get_logger(), "esp32 sent NACK, '%s'",
+                   line.c_str() + 7);
+      continue;
+    } else if (line.rfind("E,", 0) != 0) {
+      continue; // skip unrecognized lines
     }
 
     // parse line
@@ -499,12 +528,19 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
       continue;
     }
 
+    const int32_t leftDelta = leftTicks - ticks_.leftLast;
+    const int32_t rightDelta = rightTicks - ticks_.rightLast;
+    ticks_.leftTotal += leftDelta;
+    ticks_.rightTotal += rightDelta;
+    ticks_.leftLast = leftTicks;
+    ticks_.rightLast = rightTicks;
+
     // set position
     warnIfFailed(leftPositionState_->set_value(
-                     ticksToRad(leftTicks, config_.ticks_per_wheel_rev)),
+                     ticksToRad(ticks_.leftTotal, config_.ticks_per_wheel_rev)),
                  "left position");
-    warnIfFailed(rightPositionState_->set_value(
-                     ticksToRad(rightTicks, config_.ticks_per_wheel_rev)),
+    warnIfFailed(rightPositionState_->set_value(ticksToRad(
+                     ticks_.rightTotal, config_.ticks_per_wheel_rev)),
                  "right position");
 
     // set velocity
@@ -512,12 +548,10 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
       // uint32_t subtraction wraps correctly
       const double dt_s = (timestampUs - lastSampleTimeUs_) * 1e-6;
       if (dt_s > 0.0) {
-        double leftVelocity = ticksToRad(leftTicks - lastLeftTicks_,
-                                         config_.ticks_per_wheel_rev) /
-                              dt_s;
-        double rightVelocity = ticksToRad(rightTicks - lastRightTicks_,
-                                          config_.ticks_per_wheel_rev) /
-                               dt_s;
+        double leftVelocity =
+            ticksToRad(leftDelta, config_.ticks_per_wheel_rev) / dt_s;
+        double rightVelocity =
+            ticksToRad(rightDelta, config_.ticks_per_wheel_rev) / dt_s;
         warnIfFailed(leftVelocityState_->set_value(leftVelocity),
                      "left velocity");
         warnIfFailed(rightVelocityState_->set_value(rightVelocity),
@@ -525,8 +559,6 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
       }
     }
 
-    lastLeftTicks_ = leftTicks;
-    lastRightTicks_ = rightTicks;
     lastSampleTimeUs_ = timestampUs;
     hasEncoderBaseline_ = true;
   }

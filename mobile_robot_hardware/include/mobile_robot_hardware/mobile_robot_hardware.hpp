@@ -118,10 +118,15 @@ private:
   hardware_interface::CommandInterface::SharedPtr leftVelocityCommand_;
   hardware_interface::CommandInterface::SharedPtr rightVelocityCommand_;
 
-  // used to compute HW_IF_VELOCITY from successive tick deltas; seeded by
-  // on_activate()
-  int32_t lastLeftTicks_ = 0;
-  int32_t lastRightTicks_ = 0;
+  // total to keep track of total tick count
+  // last is used to increment total count when receiving new reading
+  struct Ticks {
+    int32_t leftTotal = 0;
+    int32_t leftLast = 0;
+    int32_t rightTotal = 0;
+    int32_t rightLast = 0;
+  } ticks_;
+
   uint32_t lastSampleTimeUs_ = 0;
   // false until read() has consumed a first sample after on_activate()
   bool hasEncoderBaseline_ = false;
@@ -145,6 +150,11 @@ private:
   // serialize and send an "M,..." velocity command to the esp32
   // @throws std::runtime_error / asio exceptions on a send failure
   void sendMotorCmd_(float leftVelCmd, float rightVelCmd);
+
+  // handles a SETUP event seen outside on_configure(), i.e. the esp32
+  // restarted while active: resends config_ (best-effort, non-blocking) and
+  // marks the tick offsets for recalculation on the next encoder sample
+  void handleRestart_();
 };
 
 } // namespace mobile_robot_hardware
