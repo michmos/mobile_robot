@@ -32,13 +32,22 @@ private:
 
   // ff + pi compute duty cycle
   float computeDuty_(float cmdVel, float currVel, float dt_s, bool left) {
+    float *integral_term =
+        (left) ? &integral_term_left_ : &integral_term_right_;
+
+    // a stop command should hold still, not servo to exactly zero off a
+    // velocity reading that's mostly quantization noise at low tick counts -
+    // fighting that noise is what made the wheel judder/reverse near zero
+    if (cmdVel == 0.0f) {
+      *integral_term = 0.0f;
+      return 0.0f;
+    }
+
     float errTerm = cmdVel - currVel;
 
     // chose parameters for left or right wheel
     float slope = (left) ? slope_left_ : slope_right_;
     float min_duty = (left) ? min_duty_left_ : min_duty_right_;
-    float *integral_term =
-        (left) ? &integral_term_left_ : &integral_term_right_;
 
     // ff + pi
     float duty =
