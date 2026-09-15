@@ -58,13 +58,8 @@ private:
         (duty > 1.0f && errTerm > 0.0f) || (duty < -1.0f && errTerm < 0.0f);
     if (!saturated) {
       *integral_term += ki_ * errTerm * dt_s;
-
-      // clamp integral term to limit
-      if (*integral_term > integral_limit_) {
-        *integral_term = integral_limit_;
-      } else if (*integral_term < -integral_limit_) {
-        *integral_term = -integral_limit_;
-      }
+      *integral_term =
+          clamp_(*integral_term, -integral_limit_, integral_limit_);
     }
     return clamp_(duty);
   }
