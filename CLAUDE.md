@@ -10,7 +10,7 @@ colcon build --packages-select mobile_robot
 source install/setup.bash
 ```
 
-Run the real robot stack (includes the micro-ROS agent talking to the ESP32 over serial):
+Run the real robot stack (controller_manager against MobileRobotHardware, which talks to the ESP32 directly over its own serial protocol, with mobile_robot_controller spawned):
 
 ```bash
 ros2 launch mobile_robot mobile_robot_launch.py
@@ -22,7 +22,7 @@ ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently th
 
 ## Code Conventions
 - Follow ROS 2 conventions throughout (topic/node naming, message usage, package layout). If you spot code that doesn't follow them, flag/correct it rather than silently matching it.
-- Pi-side node classes use camelCase for members, trailing underscore for private variables, e.g. `dutyCycle_`, and lambda callbacks stored as `sub_`/`pub_`/`timer_`; keep new nodes consistent with this pattern (see `motor_control.cpp`, `perception.cpp`, `collision_avoid.cpp`).
+- Pi-side node classes use camelCase for members, trailing underscore for private variables, e.g. `dutyCycle_`, and lambda callbacks stored as `sub_`/`pub_`/`timer_`; keep new nodes consistent with this pattern (see `mobile_robot_controller.cpp`/`.hpp` for a current example - the original example nodes this convention was written against, `motor_control.cpp`/`perception.cpp`/`collision_avoid.cpp`, were removed as dead code once ros2_control replaced them).
 - ESP32 firmware peripherals are wrapped in small non-copyable classes under `esp32_firmware/inc/` (`L298N`, `Encoder`) — copy/assignment is explicitly deleted since they own hardware pins.
 - URDF is built with xacro macros: `mobile_robot_nodes/description/mobile_robot.urdf.xacro` includes `properties.xacro` (dimensions/masses), `materials.xacro`, and `intertial_macros.xacro` (inertia tensor helpers). Add new physical properties to `properties.xacro` rather than inlining constants in the URDF.
 
