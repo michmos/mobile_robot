@@ -74,16 +74,17 @@ void updateMotor(const EncoderSample& e) {
 
   msgs::MotorCmd cmd = g_sc.getMotorCmd();
   if (millis() - cmd.timestamp_ms > g_config.watchdog_timeout_ms) {
-    g_motorDriver.stop();
+    g_motorDriver.brake();
     g_motorController.reset();
     g_wasStopped = true;
     g_sc.writeln(msgs::Log("No new motor command received, stopping motors"));
     return;
   }
 
+  // ---- get new duty ----
   float dutyLeft, dutyRight;
   if (g_wasStopped) {
-    // ff without pi to avoid integral windup
+    // ff without pi to avoid calculating velocity from stale data
     dutyLeft = g_motorController.feedforwardLeft(cmd.left_vel_cmd);
     dutyRight = g_motorController.feedforwardRight(cmd.right_vel_cmd);
 
@@ -99,11 +100,21 @@ void updateMotor(const EncoderSample& e) {
   g_wasStopped = false;
   lastSample = e;
 
-  // update direction
-  g_motorDriver.updateDir1((dutyLeft >= 0.0f) ? FORWARDS : BACKWARDS);
-  g_motorDriver.updateDir2((dutyRight >= 0.0f) ? FORWARDS : BACKWARDS);
-  // update duty
-  if (g_motorDriver.updateDuty(fabsf(dutyLeft), fabsf(dutyRight)) == -1) {
+  // ---- update duty on motor driver ----
+  bool motorError = false;
+  if (cmd.left_vel_cmd == 0.0f) {
+    g_motorDriver.brake1();
+  } else {
+    g_motorDriver.updateDir1((dutyLeft >= 0.0f) ? FORWARDS : BACKWARDS);
+    motorError |= (g_motorDriver.setDuty1(fabsf(dutyLeft)) == -1);
+  }
+  if (cmd.right_vel_cmd == 0.0f) {
+    g_motorDriver.brake2();
+  } else {
+    g_motorDriver.updateDir2((dutyRight >= 0.0f) ? FORWARDS : BACKWARDS);
+    motorError |= (g_motorDriver.setDuty2(fabsf(dutyRight)) == -1);
+  }
+  if (motorError) {
     g_sc.writeln(msgs::Log("Could not update motor duty cycles"));
   }
 }
@@ -148,7 +159,7 @@ bool updateConfig() {
     return false;
   }
 
-  g_motorDriver.stop();
+  g_motorDriver.brake();
   g_wasStopped = true;
 
   // update component configs

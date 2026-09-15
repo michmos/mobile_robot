@@ -45,10 +45,14 @@ public:
     pinMode(ENB_Pin_, OUTPUT);
     pinMode(IN3_Pin_, OUTPUT);
     pinMode(IN4_Pin_, OUTPUT);
-    // turn motor off
+    // safe default before the pwm peripheral takes over ENA/ENB below: no
+    // direction driven, outputs disabled
     digitalWrite(ENA_Pin_, LOW);
     digitalWrite(ENB_Pin_, LOW);
-    stop();
+    digitalWrite(IN1_Pin_, LOW);
+    digitalWrite(IN2_Pin_, LOW);
+    digitalWrite(IN3_Pin_, LOW);
+    digitalWrite(IN4_Pin_, LOW);
 
     // set up one pwm channel for each motor
     ledcSetup(k_channel1_, k_pwm_freq_hz_, pwm_res_);
@@ -57,11 +61,24 @@ public:
     ledcAttachPin(ENB_Pin_, k_channel2_);
   }
 
-  void stop() {
+  // electrically shorts a motor's terminals (IN1==IN2) while keeping the
+  // bridge enabled, so its own back-emf (electromotive force, generated
+  // while still spinning) opposes its rotation - stops much faster than
+  // just cutting power. See the L298 datasheet truth table. Full duty gives
+  // the strongest brake; lower the literal below if it turns out too abrupt
+  void brake1() {
     digitalWrite(IN1_Pin_, LOW);
     digitalWrite(IN2_Pin_, LOW);
+    ledcWrite(k_channel1_, 1.0f * duty_max_ + 0.5f);
+  }
+  void brake2() {
     digitalWrite(IN3_Pin_, LOW);
     digitalWrite(IN4_Pin_, LOW);
+    ledcWrite(k_channel2_, 1.0f * duty_max_ + 0.5f);
+  }
+  void brake() {
+    brake1();
+    brake2();
   }
 
   // move both motors in forward direction
@@ -70,17 +87,21 @@ public:
     updateDir2(FORWARDS);
   }
 
-  // drive both motors from normalized duty cycles
-  // @param duty_cycle1: normalized duty cycle for motor 1 in [0; 1]
-  // @param duty_cycle2: normalized duty cycle for motor 2 in [0; 1]
-  int updateDuty(float duty_cycle1, float duty_cycle2) {
-    if (duty_cycle1 < 0 || duty_cycle1 > 1 || duty_cycle2 < 0 ||
-        duty_cycle2 > 1) {
-      return -1; // ignore invalid duty cycles
+  // drive motor 1/2 from a normalized duty cycle
+  // @param duty_cycle: normalized duty cycle in [0; 1]
+  // @return: 0 on success, -1 if duty_cycle is out of range
+  int setDuty1(float duty_cycle) {
+    if (duty_cycle < 0 || duty_cycle > 1) {
+      return -1;
     }
-
-    ledcWrite(k_channel1_, duty_cycle1 * duty_max_ + 0.5f);
-    ledcWrite(k_channel2_, duty_cycle2 * duty_max_ + 0.5f);
+    ledcWrite(k_channel1_, duty_cycle * duty_max_ + 0.5f);
+    return 0;
+  }
+  int setDuty2(float duty_cycle) {
+    if (duty_cycle < 0 || duty_cycle > 1) {
+      return -1;
+    }
+    ledcWrite(k_channel2_, duty_cycle * duty_max_ + 0.5f);
     return 0;
   }
 
