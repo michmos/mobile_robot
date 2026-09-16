@@ -6,6 +6,8 @@
 #include <hardware_interface/types/hardware_component_interface_params.hpp>
 #include <hardware_interface/types/hardware_interface_return_values.hpp>
 #include <io_context/io_context.hpp>
+#include <rcl_interfaces/msg/set_parameters_result.hpp>
+#include <rclcpp/parameter.hpp>
 #include <rclcpp_lifecycle/state.hpp>
 #include <serial_driver/serial_driver.hpp>
 
@@ -48,8 +50,21 @@ private:
   std::string serialPort_;
   uint32_t baudRate_ = 0;
 
-  // forwarded to the esp32 in the Config ("C,...") message
-  protocol::ConfigPayload config_;
+  // wraps payload and mutex for safe read, write operations
+  class Config {
+  public:
+    protocol::ConfigPayload get() const;
+    void set(const protocol::ConfigPayload &newConfig);
+    std::string serialize() const;
+
+  private:
+    protocol::ConfigPayload payload_;
+    mutable std::mutex mutex_;
+  } config_;
+
+  // keeps the add_on_set_parameters_callback registration alive
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
+      paramCallbackHandle_;
 
 public:
   MobileRobotHardware() = default;
@@ -155,6 +170,16 @@ private:
   // restarted while active: resends config_ (best-effort, non-blocking) and
   // marks the tick offsets for recalculation on the next encoder sample
   void handleRestart_();
+
+  // declare tunable parameters and register
+  // onParamsSet_ so they can be retuned live without a relaunch
+  void declareTunableParams_();
+
+  // callback for parameter changes:
+  // validates new paraemeters and if correct, updates config_ and pushes
+  // it to the esp32 (best-effort, non-blocking)
+  rcl_interfaces::msg::SetParametersResult
+  onParamsSet_(const std::vector<rclcpp::Parameter> &parameters);
 };
 
 } // namespace mobile_robot_hardware

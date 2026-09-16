@@ -157,27 +157,11 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
 constexpr std::chrono::milliseconds k_setup_timeout{5000};
 constexpr std::chrono::milliseconds k_ack_timeout{2000};
 
-// invert_left/invert_right must go out as 0/1, not as true/false
-std::string serializeConfig(const protocol::ConfigPayload &c) {
-  return "C," + std::to_string(c.kp) + "," + std::to_string(c.ki) + "," +
-         std::to_string(c.integral_limit) + "," + std::to_string(c.slope_left) +
-         "," + std::to_string(c.slope_right) + "," +
-         std::to_string(c.min_duty_left) + "," +
-         std::to_string(c.min_duty_right) + "," +
-         std::to_string(c.ticks_per_wheel_rev) + "," +
-         std::to_string(c.watchdog_timeout_ms) + "," +
-         std::to_string(c.control_rate_hz) + "," +
-         std::to_string(c.report_rate_hz) + "," +
-         std::string(c.invert_left ? "1" : "0") + "," +
-         std::string(c.invert_right ? "1" : "0") + "\n";
-}
-
 // M,<left_vel_cmd>,<right_vel_cmd>\n
 std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
   return "M," + std::to_string(leftVelCmd) + "," + std::to_string(rightVelCmd) +
          "\n";
 }
-
 // E,<left_ticks>,<right_ticks>,<us>\n - see esp32_firmware/inc/Messages.hpp
 // EncoderData; line has already had its trailing '\n' stripped by readLine_
 // @throws std::runtime_error if the line is malformed
@@ -223,15 +207,132 @@ MobileRobotHardware::on_init(const HardwareComponentInterfaceParams &params) {
     ParsedParams parsed = parseParams(info_.hardware_parameters);
     serialPort_ = std::move(parsed.serialPort);
     baudRate_ = parsed.baudRate;
-    config_ = parsed.config;
+    config_.set(parsed.config);
   } catch (const std::runtime_error &e) {
     RCLCPP_ERROR(this->get_logger(), "%s", e.what());
     return CallbackReturn::ERROR;
   }
 
+  declareTunableParams_();
+
   RCLCPP_INFO(this->get_logger(), "Configured for esp32 on %s at %u baud",
               serialPort_.c_str(), baudRate_);
   return CallbackReturn::SUCCESS;
+}
+
+protocol::ConfigPayload MobileRobotHardware::Config::get() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return payload_;
+}
+
+void MobileRobotHardware::Config::set(
+    const protocol::ConfigPayload &newConfig) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  payload_ = newConfig;
+}
+
+std::string MobileRobotHardware::Config::serialize() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  // invert_left/invert_right must go out as 0/1, not as true/false
+  return "C," + std::to_string(payload_.kp) + "," +
+         std::to_string(payload_.ki) + "," +
+         std::to_string(payload_.integral_limit) + "," +
+         std::to_string(payload_.slope_left) + "," +
+         std::to_string(payload_.slope_right) + "," +
+         std::to_string(payload_.min_duty_left) + "," +
+         std::to_string(payload_.min_duty_right) + "," +
+         std::to_string(payload_.ticks_per_wheel_rev) + "," +
+         std::to_string(payload_.watchdog_timeout_ms) + "," +
+         std::to_string(payload_.control_rate_hz) + "," +
+         std::to_string(payload_.report_rate_hz) + "," +
+         std::string(payload_.invert_left ? "1" : "0") + "," +
+         std::string(payload_.invert_right ? "1" : "0") + "\n";
+}
+
+void MobileRobotHardware::declareTunableParams_() {
+  auto node = get_node();
+  const protocol::ConfigPayload initial = config_.get();
+  node->declare_parameter("pid_kp", static_cast<double>(initial.kp));
+  node->declare_parameter("pid_ki", static_cast<double>(initial.ki));
+  node->declare_parameter("pid_integral_limit",
+                          static_cast<double>(initial.integral_limit));
+  node->declare_parameter("ff_slope_left",
+                          static_cast<double>(initial.slope_left));
+  node->declare_parameter("ff_slope_right",
+                          static_cast<double>(initial.slope_right));
+  node->declare_parameter("ff_min_duty_left",
+                          static_cast<double>(initial.min_duty_left));
+  node->declare_parameter("ff_min_duty_right",
+                          static_cast<double>(initial.min_duty_right));
+
+  paramCallbackHandle_ = node->add_on_set_parameters_callback(
+      [this](const std::vector<rclcpp::Parameter> &parameters) {
+        return onParamsSet_(parameters);
+      });
+}
+
+rcl_interfaces::msg::SetParametersResult MobileRobotHardware::onParamsSet_(
+    const std::vector<rclcpp::Parameter> &parameters) {
+  rcl_interfaces::msg::SetParametersResult result;
+  result.successful = true;
+
+  protocol::ConfigPayload candidate = config_.get();
+
+  try {
+    for (const auto &param : parameters) {
+      const auto &name = param.get_name();
+      const float value = static_cast<float>(param.as_double());
+      if (name == "pid_kp") {
+        candidate.kp = value;
+      } else if (name == "pid_ki") {
+        candidate.ki = value;
+      } else if (name == "pid_integral_limit") {
+        candidate.integral_limit = value;
+      } else if (name == "ff_slope_left") {
+        candidate.slope_left = value;
+      } else if (name == "ff_slope_right") {
+        candidate.slope_right = value;
+      } else if (name == "ff_min_duty_left") {
+        candidate.min_duty_left = value;
+      } else if (name == "ff_min_duty_right") {
+        candidate.min_duty_right = value;
+      }
+      // anything else isn't one of ours (shouldn't happen, we only declare
+      // the names above), leave candidate as-is
+    }
+  } catch (const std::exception &e) {
+    result.successful = false;
+    result.reason = std::string("invalid parameter value: ") + e.what();
+    return result;
+  }
+
+  const protocol::e_config_field ret = protocol::validateConfig(candidate);
+  if (ret != protocol::CONFIG_OK) {
+    result.successful = false;
+    result.reason = "value for '" +
+                    std::string(protocol::configFieldName(ret)) +
+                    "' is out of range, the esp32 would reject it";
+    return result;
+  }
+
+  config_.set(candidate);
+  const std::string serialized = config_.serialize();
+
+  // best-effort: not yet connected (or mid-reconnect) just means the new
+  // config_ takes effect on the next handshake instead of immediately
+  if (serial_.port && serial_.port->is_open()) {
+    try {
+      serial_.port->send(
+          std::vector<uint8_t>(serialized.begin(), serialized.end()));
+    } catch (const std::exception &e) {
+      result.successful = false;
+      result.reason =
+          std::string("failed to send configuration to esp32: ") + e.what();
+      return result;
+    }
+  }
+
+  return result;
 }
 
 bool MobileRobotHardware::readLine_(std::string &line,
@@ -284,7 +385,7 @@ void MobileRobotHardware::performHandshake_(
   }
 
   // send config
-  const std::string configLine = serializeConfig(config_);
+  const std::string configLine = config_.serialize();
   serial_.port->send(
       std::vector<uint8_t>(configLine.begin(), configLine.end()));
 
@@ -421,7 +522,7 @@ void MobileRobotHardware::handleRestart_() {
   hasEncoderBaseline_ = false;
 
   try {
-    const std::string configLine = serializeConfig(config_);
+    const std::string configLine = config_.serialize();
     serial_.port->send(
         std::vector<uint8_t>(configLine.begin(), configLine.end()));
   } catch (const std::exception &e) {
@@ -497,6 +598,8 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
     }
   };
 
+  const float ticksPerWheelRev = config_.get().ticks_per_wheel_rev;
+
   std::string line;
   // 0ms timeout makes readLine_ non-blocking, draining whatever is already
   // buffered instead of waiting for more to arrive
@@ -537,10 +640,10 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
 
     // set position
     warnIfFailed(leftPositionState_->set_value(
-                     ticksToRad(ticks_.leftTotal, config_.ticks_per_wheel_rev)),
+                     ticksToRad(ticks_.leftTotal, ticksPerWheelRev)),
                  "left position");
-    warnIfFailed(rightPositionState_->set_value(ticksToRad(
-                     ticks_.rightTotal, config_.ticks_per_wheel_rev)),
+    warnIfFailed(rightPositionState_->set_value(
+                     ticksToRad(ticks_.rightTotal, ticksPerWheelRev)),
                  "right position");
 
     // set velocity
@@ -548,10 +651,8 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
       // uint32_t subtraction wraps correctly
       const double dt_s = (timestampUs - lastSampleTimeUs_) * 1e-6;
       if (dt_s > 0.0) {
-        double leftVelocity =
-            ticksToRad(leftDelta, config_.ticks_per_wheel_rev) / dt_s;
-        double rightVelocity =
-            ticksToRad(rightDelta, config_.ticks_per_wheel_rev) / dt_s;
+        double leftVelocity = ticksToRad(leftDelta, ticksPerWheelRev) / dt_s;
+        double rightVelocity = ticksToRad(rightDelta, ticksPerWheelRev) / dt_s;
         warnIfFailed(leftVelocityState_->set_value(leftVelocity),
                      "left velocity");
         warnIfFailed(rightVelocityState_->set_value(rightVelocity),
