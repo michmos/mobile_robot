@@ -18,6 +18,10 @@ def generate_launch_description():
         get_package_share_directory('mobile_robot'),
         'config', 'controller_manager.yaml')
 
+    twist_mux_config = os.path.join(
+        get_package_share_directory('mobile_robot'),
+        'config', 'twist_mux.yaml')
+
     return LaunchDescription([
         Node(
             package='robot_state_publisher',
@@ -42,6 +46,13 @@ def generate_launch_description():
             package='controller_manager',
             executable='spawner',
             arguments=['mobile_robot_controller'],
+            output='screen',
+        ),
+        Node(
+            package='twist_mux',
+            executable='twist_mux',
+            parameters=[twist_mux_config],
+            remappings={('/cmd_vel_out', '/cmd_vel')},
             output='screen',
         ),
     ])
