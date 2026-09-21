@@ -2,7 +2,7 @@
 #define MOBILE_ROBOT_CONTROLLER_HPP
 
 #include <controller_interface/controller_interface.hpp>
-#include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rclcpp_lifecycle/state.hpp>
 #include <realtime_tools/realtime_buffer.hpp>
@@ -62,10 +62,10 @@ private:
     bool outdated = true;
   } lastJointPose_;
 
-  rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmdVelSub_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmdVelSub_;
   // written by cmdVelCallback_() (subscription thread), read by update()
   // (realtime thread)
-  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::Twist>>
+  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::TwistStamped>>
       cmdVelBuffer_;
 
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odomPub_;
@@ -117,7 +117,7 @@ public:
 private:
   // subscription callback, stores msg into cmdVelBuffer_ for update() to pick
   // up
-  void cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::Twist> msg);
+  void cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg);
 
   // inverse kinematics: body twist -> {leftWheelVel, rightWheelVel} (rad/s)
   std::pair<double, double> inverseKinematics_(double linearVel,

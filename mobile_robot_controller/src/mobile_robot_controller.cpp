@@ -1,5 +1,5 @@
 #include "mobile_robot_controller/mobile_robot_controller.hpp"
-#include "geometry_msgs/msg/twist.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
@@ -98,8 +98,8 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
   }
 
   // set up subscriptions and publishers
-  cmdVelSub_ = get_node()->create_subscription<geometry_msgs::msg::Twist>(
-      "cmd_vel", 10, [this](std::shared_ptr<geometry_msgs::msg::Twist> msg) {
+  cmdVelSub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
+      "cmd_vel", 10, [this](std::shared_ptr<geometry_msgs::msg::TwistStamped> msg) {
         cmdVelCallback_(msg);
       });
   odomPub_ = get_node()->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
@@ -124,9 +124,9 @@ MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
   // reset twist so that no stale twist is published on reactivation
   twist_ = {};
 
-  // set cmd_vel buffer to safe command - Twist's default constructor already
+  // set cmd_vel buffer to safe command - TwistStamped's default constructor
   // zero-initializes linear/angular, no need to set fields individually
-  cmdVelBuffer_.initRT(std::make_shared<geometry_msgs::msg::Twist>());
+  cmdVelBuffer_.initRT(std::make_shared<geometry_msgs::msg::TwistStamped>());
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -159,7 +159,7 @@ MobileRobotController::update(const rclcpp::Time &time,
 
   // write commands
   auto t = cmdVelBuffer_.readFromRT();
-  auto cmds = inverseKinematics_(t->get()->linear.x, t->get()->angular.z);
+  auto cmds = inverseKinematics_(t->get()->twist.linear.x, t->get()->twist.angular.z);
   if (!command_interfaces_[LEFT].set_value(cmds.first) ||
       !command_interfaces_[RIGHT].set_value(cmds.second)) {
     RCLCPP_ERROR(get_node()->get_logger(),
@@ -171,7 +171,7 @@ MobileRobotController::update(const rclcpp::Time &time,
 }
 
 void MobileRobotController::cmdVelCallback_(
-    const std::shared_ptr<geometry_msgs::msg::Twist> msg) {
+    const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg) {
   cmdVelBuffer_.writeFromNonRT(msg);
 }
 
