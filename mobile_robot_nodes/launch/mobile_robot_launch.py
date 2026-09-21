@@ -31,7 +31,13 @@ def generate_launch_description():
             parameters=[robot_description, controller_manager_config],
             output='both',
         ),
-        # Spawn controller
+        # Spawn controllers
+        Node(
+            package='controller_manager',
+            executable='spawner',
+            arguments=['joint_state_broadcaster'],
+            output='screen',
+        ),
         Node(
             package='controller_manager',
             executable='spawner',

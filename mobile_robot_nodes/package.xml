@@ -16,6 +16,7 @@
        MobileRobotHardware, with mobile_robot_controller spawned -->
   <exec_depend>xacro</exec_depend>
   <exec_depend>controller_manager</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <exec_depend>mobile_robot_hardware</exec_depend>
   <exec_depend>mobile_robot_controller</exec_depend>
