@@ -589,8 +589,36 @@ MobileRobotHardware::on_error(const rclcpp_lifecycle::State &previous_state) {
   return CallbackReturn::SUCCESS;
 }
 
-return_type MobileRobotHardware::read(const rclcpp::Time &,
-                                      const rclcpp::Duration &) {
+void MobileRobotHardware::processNewLines_() {
+  std::optional<std::string> latestEncoderLine;
+  std::string line;
+  // 0ms timeout makes readLine_ non-blocking, draining whatever is already
+  // buffered instead of waiting for more to arrive
+  while (readLine_(line, std::chrono::milliseconds(0))) {
+    if (line.rfind("L,", 0) == 0) {
+      RCLCPP_INFO(this->get_logger(), "esp32: %s", line.c_str() + 2);
+    } else if (line == "S,SETUP") {
+      handleRestart_();
+      // encoder lines from before the restart belong to the old tick counter
+      latestEncoderLine.reset();
+    } else if (line == "S,ACK") {
+      RCLCPP_INFO(this->get_logger(), "esp32 sent ACK");
+    } else if (line.rfind("S,NACK,", 0) == 0) {
+      RCLCPP_ERROR(this->get_logger(), "esp32 sent NACK, '%s'",
+                   line.c_str() + 7);
+    } else if (line.rfind("E,", 0) == 0) {
+      latestEncoderLine = line;
+    }
+    // anything else is unrecognized and skipped
+  }
+
+  // only the newest encoder report matters, older ones are superseded by it
+  if (latestEncoderLine.has_value()) {
+    updateEncoderState_(*latestEncoderLine);
+  }
+}
+
+void MobileRobotHardware::updateEncoderState_(const std::string &line) {
   auto warnIfFailed = [this](bool ok, const char *what) {
     if (!ok) {
       RCLCPP_WARN(this->get_logger(), "Could not update %s state interface",
@@ -598,72 +626,54 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
     }
   };
 
-  const float ticksPerWheelRev = config_.get().ticks_per_wheel_rev;
-
-  std::string line;
-  // 0ms timeout makes readLine_ non-blocking, draining whatever is already
-  // buffered instead of waiting for more to arrive
-  while (readLine_(line, std::chrono::milliseconds(0))) {
-    if (line.rfind("L,", 0) == 0) {
-      RCLCPP_INFO(this->get_logger(), "esp32: %s", line.c_str() + 2);
-      continue;
-    } else if (line == "S,SETUP") {
-      handleRestart_();
-      continue;
-    } else if (line == "S,ACK") {
-      RCLCPP_INFO(this->get_logger(), "esp32 sent ACK");
-      continue;
-    } else if (line.rfind("S,NACK,", 0) == 0) {
-      RCLCPP_ERROR(this->get_logger(), "esp32 sent NACK, '%s'",
-                   line.c_str() + 7);
-      continue;
-    } else if (line.rfind("E,", 0) != 0) {
-      continue; // skip unrecognized lines
-    }
-
-    // parse line
-    int32_t leftTicks, rightTicks;
-    uint32_t timestampUs;
-    try {
-      parseEncoderReport(line, leftTicks, rightTicks, timestampUs);
-    } catch (const std::exception &e) {
-      RCLCPP_WARN(this->get_logger(), "%s", e.what());
-      continue;
-    }
-
-    const int32_t leftDelta = leftTicks - ticks_.leftLast;
-    const int32_t rightDelta = rightTicks - ticks_.rightLast;
-    ticks_.leftTotal += leftDelta;
-    ticks_.rightTotal += rightDelta;
-    ticks_.leftLast = leftTicks;
-    ticks_.rightLast = rightTicks;
-
-    // set position
-    warnIfFailed(leftPositionState_->set_value(
-                     ticksToRad(ticks_.leftTotal, ticksPerWheelRev)),
-                 "left position");
-    warnIfFailed(rightPositionState_->set_value(
-                     ticksToRad(ticks_.rightTotal, ticksPerWheelRev)),
-                 "right position");
-
-    // set velocity
-    if (hasEncoderBaseline_) {
-      // uint32_t subtraction wraps correctly
-      const double dt_s = (timestampUs - lastSampleTimeUs_) * 1e-6;
-      if (dt_s > 0.0) {
-        double leftVelocity = ticksToRad(leftDelta, ticksPerWheelRev) / dt_s;
-        double rightVelocity = ticksToRad(rightDelta, ticksPerWheelRev) / dt_s;
-        warnIfFailed(leftVelocityState_->set_value(leftVelocity),
-                     "left velocity");
-        warnIfFailed(rightVelocityState_->set_value(rightVelocity),
-                     "right velocity");
-      }
-    }
-
-    lastSampleTimeUs_ = timestampUs;
-    hasEncoderBaseline_ = true;
+  int32_t leftTicks, rightTicks;
+  uint32_t timestampUs;
+  try {
+    parseEncoderReport(line, leftTicks, rightTicks, timestampUs);
+  } catch (const std::exception &e) {
+    RCLCPP_WARN(this->get_logger(), "%s", e.what());
+    return;
   }
 
+  const float ticksPerWheelRev = config_.get().ticks_per_wheel_rev;
+
+  // update total ticks - delta required in cas of esp restart
+  const int32_t leftDelta = leftTicks - ticks_.leftLast;
+  const int32_t rightDelta = rightTicks - ticks_.rightLast;
+  ticks_.leftTotal += leftDelta;
+  ticks_.rightTotal += rightDelta;
+  ticks_.leftLast = leftTicks;
+  ticks_.rightLast = rightTicks;
+
+  // set position
+  warnIfFailed(leftPositionState_->set_value(
+                   ticksToRad(ticks_.leftTotal, ticksPerWheelRev)),
+               "left position");
+  warnIfFailed(rightPositionState_->set_value(
+                   ticksToRad(ticks_.rightTotal, ticksPerWheelRev)),
+               "right position");
+
+  // set velocity, averaged over the time since the previous processed sample
+  if (hasEncoderBaseline_) {
+    // uint32_t subtraction wraps correctly
+    const double dt_s = (timestampUs - lastSampleTimeUs_) * 1e-6;
+    if (dt_s > 0.0) {
+      double leftVelocity = ticksToRad(leftDelta, ticksPerWheelRev) / dt_s;
+      double rightVelocity = ticksToRad(rightDelta, ticksPerWheelRev) / dt_s;
+      warnIfFailed(leftVelocityState_->set_value(leftVelocity),
+                   "left velocity");
+      warnIfFailed(rightVelocityState_->set_value(rightVelocity),
+                   "right velocity");
+    }
+  }
+
+  lastSampleTimeUs_ = timestampUs;
+  hasEncoderBaseline_ = true;
+}
+
+return_type MobileRobotHardware::read(const rclcpp::Time &,
+                                      const rclcpp::Duration &) {
+  processNewLines_();
   return return_type::OK;
 }
 

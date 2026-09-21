@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -170,6 +171,14 @@ private:
   // restarted while active: resends config_ (best-effort, non-blocking) and
   // marks the tick offsets for recalculation on the next encoder sample
   void handleRestart_();
+
+  // handles all buffered lines (logs, SETUP, ACK, NACK). Of the encoder
+  // reports received since the last SETUP event, only the newest is processed
+  void processNewLines_();
+
+  // parses an encoder report and updates the position and velocity states
+  // velocity is averaged over the time since the previously processed report
+  void updateEncoderState_(const std::string &line);
 
   // declare tunable parameters and register
   // onParamsSet_ so they can be retuned live without a relaunch
