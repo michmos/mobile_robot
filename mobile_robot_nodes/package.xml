@@ -22,6 +22,7 @@
   <exec_depend>mobile_robot_hardware</exec_depend>
   <exec_depend>mobile_robot_controller</exec_depend>
   <exec_depend>xv_11_driver</exec_depend>
+  <exec_depend>twist_mux</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
