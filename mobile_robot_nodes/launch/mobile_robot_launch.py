@@ -55,4 +55,10 @@ def generate_launch_description():
             remappings={('/cmd_vel_out', '/cmd_vel')},
             output='screen',
         ),
+        Node(
+            package='xv_11_driver',
+            executable='xv_11_driver',
+            parameters=[{'frame_id': 'lidar', 'port': '/dev/ttyAMA0'}],
+            output='screen',
+        ),
     ])
