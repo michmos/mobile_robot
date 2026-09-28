@@ -28,7 +28,7 @@
       <param name="control_rate_hz">200</param>
       <param name="report_rate_hz">50</param>
 
-      <param name="invert_left">false</param>
+      <param name="invert_left">true</param>
       <param name="invert_right">false</param>
     </hardware>
 
