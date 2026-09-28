@@ -5,14 +5,16 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 import xacro
 
+from mobile_robot.urdf_kinematics import write_kinematics_params
+
 
 def generate_launch_description():
     xacro_file = os.path.join(
         get_package_share_directory('mobile_robot'),
         'description', 'mobile_robot.urdf.xacro')
-    robot_description = {
-        'robot_description': xacro.process_file(xacro_file).toxml()
-    }
+    urdf_xml = xacro.process_file(xacro_file).toxml()
+    robot_description = {'robot_description': urdf_xml}
+    kinematics_config = write_kinematics_params(urdf_xml)
 
     controller_manager_config = os.path.join(
         get_package_share_directory('mobile_robot'),
@@ -32,7 +34,8 @@ def generate_launch_description():
         Node(
             package='controller_manager',
             executable='ros2_control_node',
-            parameters=[robot_description, controller_manager_config],
+            parameters=[robot_description, controller_manager_config,
+                        kinematics_config],
             output='both',
         ),
         # Spawn controllers

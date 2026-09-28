@@ -18,9 +18,8 @@ mobile_robot_controller:
     left_wheel_joint_name: left_wheel_joint
     right_wheel_joint_name: right_wheel_joint
 
-    # kinematic parameters (m), from properties.xacro / mobile_robot.urdf.xacro:
-    wheel_separation: 0.165
-    wheel_radius: 0.0335
+    # wheel_separation and wheel_radius come from the URDF, see
+    # mobile_robot_launch.py
 
     # velocity variance ((m/s)^2 / (rad/s)^2), estimated from the hardware's
     # own encoder resolution and control rate
