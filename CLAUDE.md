@@ -1,6 +1,6 @@
 # CLAUDE.md
 * This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-* This file is only meant for tuning claudes behaviour, not to store information. Everything else belongs in a different file - check /. for other files such as TODO.md and OVERVIEW.md
+* This file is only meant for tuning claudes behaviour, not to store information. Everything else belongs in a different file - check ./ for other files such as TODO.md and OVERVIEW.md
 
 ## Build and run
 Build from the colcon workspace root (one level above this repo, i.e. `ros2_ws/`):
