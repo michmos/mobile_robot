@@ -64,4 +64,9 @@ def generate_launch_description():
             parameters=[{'frame_id': 'lidar', 'port': '/dev/ttyAMA0'}],
             output='screen',
         ),
+        Node(
+            package='foxglove_bridge',
+            executable='foxglove_bridge',
+            output='screen',
+        ),
     ])
