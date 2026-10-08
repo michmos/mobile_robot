@@ -6,7 +6,7 @@
       <plugin>mobile_robot_hardware/MobileRobotHardware</plugin>
       <!-- list all params here that are needed by the hardware plugin - it will receive them  -->
       <!-- through the info object. e.g. baud_rate, serial_port ... -->
-      <param name="serial_port">/dev/ttyUSB0</param>
+      <param name="serial_port">/dev/esp32</param>
       <param name="baud_rate">115200</param>
 
       <!-- PI gains, shared by both wheels, integral limit is a duty fraction -->
