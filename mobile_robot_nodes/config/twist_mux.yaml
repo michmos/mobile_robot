@@ -4,6 +4,10 @@ twist_mux:
     use_stamped: true
 
     topics:
+      joystick:
+          topic   : cmd_vel_joy
+          timeout : 0.5
+          priority: 100
       keyboard:
         topic   : cmd_vel_keyboard
         timeout : 0.5
