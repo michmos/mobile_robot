@@ -4,9 +4,7 @@
 [Unit]
 Description=Setup ros2 and launch mobile_robot
 After=network-online.target
-After=dev-esp32.device
 Wants=network-online.target
-Wants=dev-esp32.device
 # Defines how often we can fail in a given time before
 # we abort
 StartLimitIntervalSec=90
