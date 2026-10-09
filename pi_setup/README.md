@@ -33,6 +33,7 @@ sudo systemctl enable --now mobile_robot
 sudo systemctl stop mobile_robot          # before manual launches (serial port)
 sudo systemctl restart mobile_robot
 journalctl -u mobile_robot -f             # logs
+journalctl -u mobile_robot -p err --since "10 min ago"  # errors only
 sudo systemctl reset-failed mobile_robot  # after the restart limit was hit
 ```
 
