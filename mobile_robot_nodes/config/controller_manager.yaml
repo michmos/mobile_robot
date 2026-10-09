@@ -4,6 +4,10 @@
 # esp32's own control loop.
 controller_manager:
   ros__parameters:
+    # abort ros2_control_node if the hardware (esp32 handshake) fails to start
+    hardware_components_initial_state:
+      shutdown_on_initial_state_failure: true
+
     update_rate: 200
 
     joint_state_broadcaster:
