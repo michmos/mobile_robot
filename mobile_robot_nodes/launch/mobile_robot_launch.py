@@ -2,6 +2,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import Shutdown
 from launch_ros.actions import Node
 import xacro
 
@@ -37,6 +38,7 @@ def generate_launch_description():
             parameters=[robot_description, controller_manager_config,
                         kinematics_config],
             output='both',
+            on_exit=Shutdown(reason='ros2_control_node exited'),
         ),
         # Spawn controllers
         Node(
