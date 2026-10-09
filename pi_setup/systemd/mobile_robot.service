@@ -1,5 +1,5 @@
 # This service starts the mobile_robot application on system boot
-# and restarts if it fails
+# and restarts it whenever it exits
 
 [Unit]
 Description=Setup ros2 and launch mobile_robot
@@ -16,7 +16,8 @@ StartLimitBurst=5
 Type=simple
 User=mypi
 ExecStart=/home/mypi/start_robot.sh
-Restart=on-failure
+# ros2 launch exits with code 0 after a shutdown, so on-failure would not restart
+Restart=always
 RestartSec=5
 KillMode=control-group
 # Timeout for stop commands and for the service itself to stop before being killed

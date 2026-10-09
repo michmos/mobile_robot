@@ -23,7 +23,7 @@ sudo systemctl enable --now mobile_robot
 ```
 
 ## Prerequisites
-- `/home/mypi/start_robot.sh` exists, is executable and ends with `exec ros2 launch ...` so a failed launch exits non-zero
+- `/home/mypi/start_robot.sh` exists, is executable and ends with `exec ros2 launch ...` so signals reach the launch
 - user `mypi` is in the `dialout` group
 - `serial_port` in `mobile_robot_nodes/description/ros2_control.xacro` is `/dev/esp32`
 
@@ -36,4 +36,4 @@ journalctl -u mobile_robot -f             # logs
 sudo systemctl reset-failed mobile_robot  # after the restart limit was hit
 ```
 
-The service gives up after 5 failed starts within 90 s (`StartLimit*` in the unit).
+The service gives up after 5 starts within 90 s (`StartLimit*` in the unit).
