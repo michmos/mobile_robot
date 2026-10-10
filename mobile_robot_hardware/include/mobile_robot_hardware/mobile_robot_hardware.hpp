@@ -14,6 +14,7 @@
 // shared with the firmware, the include path points at esp32_firmware/
 #include "inc/ConfigPayload.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -62,6 +63,9 @@ private:
     protocol::ConfigPayload payload_;
     mutable std::mutex mutex_;
   } config_;
+
+  // set by the parameter callback, which runs on another thread than read()
+  std::atomic<bool> configChanged_{false};
 
   // keeps the add_on_set_parameters_callback registration alive
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
@@ -185,8 +189,8 @@ private:
   void declareTunableParams_();
 
   // callback for parameter changes:
-  // validates new paraemeters and if correct, updates config_ and pushes
-  // it to the esp32 (best-effort, non-blocking)
+  // validates new paraemeters and if correct, updates config_ and flags it
+  // for read() to push to the esp32
   rcl_interfaces::msg::SetParametersResult
   onParamsSet_(const std::vector<rclcpp::Parameter> &parameters);
 };

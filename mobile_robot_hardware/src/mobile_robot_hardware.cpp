@@ -316,21 +316,8 @@ rcl_interfaces::msg::SetParametersResult MobileRobotHardware::onParamsSet_(
   }
 
   config_.set(candidate);
-  const std::string serialized = config_.serialize();
-
-  // best-effort: not yet connected (or mid-reconnect) just means the new
-  // config_ takes effect on the next handshake instead of immediately
-  if (serial_.port && serial_.port->is_open()) {
-    try {
-      serial_.port->send(
-          std::vector<uint8_t>(serialized.begin(), serialized.end()));
-    } catch (const std::exception &e) {
-      result.successful = false;
-      result.reason =
-          std::string("failed to send configuration to esp32: ") + e.what();
-      return result;
-    }
-  }
+  // read() sends the new values to the esp32
+  configChanged_ = true;
 
   return result;
 }
@@ -673,6 +660,20 @@ void MobileRobotHardware::updateEncoderState_(const std::string &line) {
 
 return_type MobileRobotHardware::read(const rclcpp::Time &,
                                       const rclcpp::Duration &) {
+  if (configChanged_.exchange(false)) {
+    RCLCPP_INFO(this->get_logger(),
+                "Configuration changed, sending it to the esp32");
+    try {
+      const std::string configLine = config_.serialize();
+      serial_.port->send(
+          std::vector<uint8_t>(configLine.begin(), configLine.end()));
+    } catch (const std::exception &e) {
+      RCLCPP_ERROR(this->get_logger(),
+                   "Failed to send configuration to esp32 on '%s': %s",
+                   serialPort_.c_str(), e.what());
+    }
+  }
+
   processNewLines_();
   return return_type::OK;
 }
