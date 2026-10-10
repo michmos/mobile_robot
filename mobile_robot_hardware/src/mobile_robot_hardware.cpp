@@ -674,6 +674,14 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
 
   processNewLines_();
   serviceHandshake_();
+
+  if (handshake_.state() == Handshake::State::FAILED) {
+    // exiting lets the launch file shut the stack down and systemd restart it
+    RCLCPP_FATAL(this->get_logger(), "Handshake with esp32 on '%s' failed: %s",
+                 serialPort_.c_str(), handshake_.failureReason().c_str());
+    rclcpp::shutdown();
+    return return_type::ERROR;
+  }
   return return_type::OK;
 }
 
