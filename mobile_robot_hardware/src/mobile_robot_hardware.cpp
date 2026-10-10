@@ -688,8 +688,12 @@ return_type MobileRobotHardware::write(const rclcpp::Time &,
     return return_type::OK;
   }
 
+  // the esp32 ignores commands until configured, and a new configuration
+  // brakes it anyway
+  const bool configured = handshake_.state() == Handshake::State::CONFIGURED;
   try {
-    sendMotorCmd_(static_cast<float>(*leftCmd), static_cast<float>(*rightCmd));
+    sendMotorCmd_(configured ? static_cast<float>(*leftCmd) : 0.0f,
+                  configured ? static_cast<float>(*rightCmd) : 0.0f);
   } catch (const std::exception &e) {
     RCLCPP_ERROR(this->get_logger(),
                  "Failed to send motor command to esp32 on '%s': %s",
