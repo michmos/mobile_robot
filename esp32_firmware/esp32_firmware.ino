@@ -177,43 +177,28 @@ bool updateConfig() {
   return true;
 }
 
-// wait for the pi to answer the SETUP event with a configuration
-// @param timeout_ms: how long to keep trying before giving up
-// @return: true if a configuration was received in time
-bool waitForConfig(unsigned long timeout_ms) {
-  unsigned long start_ms = millis();
-
-  while (millis() - start_ms < timeout_ms) {
+// sends SETUP repeatedly until a valid configuration is received and applied
+void awaitConfig() {
+  do {
+    g_sc.writeln(msgs::Event(msgs::Event::SETUP));
     g_sc.read();
-    if (updateConfig()) {
-      return true;
-    }
     delay(10);
-  }
-  return false;
-}
-
-void setup() {
-  Serial.begin(115200);
-  // send setup message for hardware plugin to resend configurations such as PI gains
-  g_sc.writeln(msgs::Event(msgs::Event::SETUP));
-
-  g_motorDriver.setup();
-  g_encoder1.setup();
-  g_encoder2.setup();
-
-  // never block forever on the pi - falling back to the compiled-in defaults
-  const unsigned long k_config_timeout_ms = 5000;
-  if (!waitForConfig(k_config_timeout_ms)) {
-    g_sc.writeln(msgs::Log("No configuration received within " + std::to_string(k_config_timeout_ms) + " ms, continuing with defaults"));
-  }
-
-  g_motorController.configure(g_config.min_duty_left, g_config.min_duty_right, g_config.slope_left, g_config.slope_right, g_config.kp, g_config.ki, g_config.integral_limit);
+  } while (!updateConfig());
 }
 
 //////////////////////////////////////////////////////////////////////////////////
 // Main
 //////////////////////////////////////////////////////////////////////////////////
+
+void setup() {
+  Serial.begin(115200);
+  g_motorDriver.setup();
+  g_encoder1.setup();
+  g_encoder2.setup();
+  g_motorDriver.brake();
+
+  awaitConfig();
+}
 
 // returns true when next has been reached and updates next to the next time to run
 // otherwise just returns false
