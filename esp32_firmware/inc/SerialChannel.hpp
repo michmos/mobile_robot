@@ -4,8 +4,6 @@
 
 #include "Messages.hpp"
 #include <Arduino.h>
-#include <algorithm>
-#include <cstring>
 #include <string>
 
 class SerialChannel {
@@ -18,16 +16,18 @@ private:
 
   std::string buff_;
   msgs::MotorCmd lastMotorCmd_;
-  msgs::Config config_;
+  msgs::Config lastConfig_;
 
-  // validate and parse a single line, log if error
-  // overrides lastMotorCmd_ and config_ if respective line found
-  void parseLine_(std::string line) {
-    // trim end
+  static void trimTrailing_(std::string &line) {
     while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
       line.pop_back();
     }
+  }
 
+  // parse a single line into the latest message, log on malformed line
+  // updates lastMotorCmd_ and lastConfig_ if the line is valid
+  void parseLine_(std::string line) {
+    trimTrailing_(line);
     if (line.empty()) {
       return;
     }
@@ -49,7 +49,7 @@ private:
         writeln(msgs::Event(msgs::Event::NACK, config.lastError()));
         return;
       }
-      config_ = config;
+      lastConfig_ = config;
     } break;
     default: {
       writeln(msgs::Log("Invalid line: " + line));
@@ -107,9 +107,11 @@ public:
     Serial.write(serialized.c_str());
   }
 
-  // get the last motor command
-  msgs::MotorCmd getMotorCmd() const { return lastMotorCmd_; }
-  msgs::Config getConfig() const { return config_; }
+  // get the last valid motor command
+  const msgs::MotorCmd &getMotorCmd() const { return lastMotorCmd_; }
+
+  // get the last valid config
+  const msgs::Config &getConfig() const { return lastConfig_; }
 };
 
 #endif
