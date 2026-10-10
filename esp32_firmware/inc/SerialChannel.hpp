@@ -25,7 +25,8 @@ private:
   }
 
   // parse a single line into the latest message, log on malformed line
-  // updates lastMotorCmd_ and lastConfig_ if the line is valid
+  // updates lastMotorCmd_ and lastConfig_ if the line is valid, and sends an
+  // ACK or NACK on confg lines
   void parseLine_(std::string line) {
     trimTrailing_(line);
     if (line.empty()) {
@@ -44,11 +45,14 @@ private:
     case 'C': {
       msgs::Config config;
       if (config.init(line) == -1) {
-        // the pi waits on ACK/NACK, so a rejected configuration has to answer
-        // rather than only leaving a log line behind
-        writeln(msgs::Event(msgs::Event::NACK, config.lastError()));
+        writeln(msgs::Log("Invalid config received: " + line));
+        writeln(
+            msgs::Event(msgs::Event::NACK, std::to_string(config.timestamp_ms) +
+                                               "," + config.lastError()));
         return;
       }
+      writeln(
+          msgs::Event(msgs::Event::ACK, std::to_string(config.timestamp_ms)));
       lastConfig_ = config;
     } break;
     default: {
@@ -59,7 +63,7 @@ private:
 
 public:
   // read into buffer, parse lines, and leave any partial line in the
-  // buffer
+  // buffer - configs are responded with ACK / NACK
   // @return: number of bytes read
   size_t read() {
     // read into buffer

@@ -149,13 +149,15 @@ void sendSensorData(const EncoderSample& e) {
 //////////////////////////////////////////////////////////////////////////////////
 
 // adopt a newly received configuration into g_config
-// send ACK on valid new config
 // @return: true if a new configuration was applied
 bool updateConfig() {
-  msgs::Config received = g_sc.getConfig();
+  auto received = g_sc.getConfig();
 
-  // nothing to do unless the channel parsed a configuration we haven't seen -
-  if (!received.initialized || received.timestamp_ms == g_config.timestamp_ms) {
+  if (!received.initialized) {
+    return false;
+  }
+
+  if (g_config.initialized && received.timestamp_ms == g_config.timestamp_ms) {
     return false;
   }
 
@@ -172,7 +174,6 @@ bool updateConfig() {
   g_config = received;
 
   g_sc.writeln(msgs::Log("New configuration received"));
-  g_sc.writeln(msgs::Event(msgs::Event::ACK));
   return true;
 }
 

@@ -5,6 +5,8 @@
 #include <hardware_interface/system_interface.hpp>
 #include <hardware_interface/types/hardware_component_interface_params.hpp>
 #include <hardware_interface/types/hardware_interface_return_values.hpp>
+#include "mobile_robot_hardware/handshake.hpp"
+
 #include <io_context/io_context.hpp>
 #include <rcl_interfaces/msg/set_parameters_result.hpp>
 #include <rclcpp/parameter.hpp>
@@ -57,12 +59,23 @@ private:
   public:
     protocol::ConfigPayload get() const;
     void set(const protocol::ConfigPayload &newConfig);
-    std::string serialize() const;
+    std::string serialize(uint32_t handshakeId) const;
 
   private:
     protocol::ConfigPayload payload_;
     mutable std::mutex mutex_;
   } config_;
+
+  // how often the config is re-sent until the esp32 answers
+  static constexpr std::chrono::milliseconds k_config_retry_interval{500};
+  // has to cover the esp32 booting after the port was opened. Without a
+  // deadline a dead esp32 would hang the lifecycle transition forever
+  static constexpr std::chrono::milliseconds k_handshake_timeout{10000};
+  static constexpr std::chrono::milliseconds k_handshake_poll_interval{10};
+
+  // only touched by on_configure() and the realtime loop, which never run
+  // concurrently
+  Handshake handshake_{k_config_retry_interval, k_handshake_timeout};
 
   // set by the parameter callback, which runs on another thread than read()
   std::atomic<bool> configChanged_{false};
@@ -156,27 +169,30 @@ private:
   // @param timeout: time to wait for '\n'
   bool readLine_(std::string &line, std::chrono::milliseconds timeout);
 
-  // reads lines, discarding any that don't satisfy `matches`, until one does
-  // or `timeout` elapses
-  template <typename Predicate>
-  std::optional<std::string> readLineUntil_(std::chrono::milliseconds timeout,
-                                            Predicate matches);
+  // starts a handshake and blocks until the esp32 acknowledged it
+  // @throws std::runtime_error with the reason if the handshake failed
+  void awaitHandshake_();
 
-  // esp32 handshake: wait for its SETUP event, send config_, wait for ACK/NACK
-  // @throws std::runtime_error naming which step failed
-  void performHandshake_(std::chrono::milliseconds setupTimeout,
-                         std::chrono::milliseconds ackTimeout);
+  // sends config_ with the id of the running handshake
+  // errors are logged, the retry or the deadline of the handshake handle them
+  void sendConfig_();
+
+  // sends the config if the running handshake is due for a (re-)send
+  void serviceHandshake_();
 
   // serialize and send an "M,..." velocity command to the esp32
   // @throws std::runtime_error / asio exceptions on a send failure
   void sendMotorCmd_(float leftVelCmd, float rightVelCmd);
 
-  // handles a SETUP event seen outside on_configure(), i.e. the esp32
-  // restarted while active: resends config_ (best-effort, non-blocking) and
-  // marks the tick offsets for recalculation on the next encoder sample
-  void handleRestart_();
+  // handles a SETUP event: the esp32 is unconfigured, e.g. it restarted. Marks
+  // the tick offsets for recalculation on the next encoder sample and has the
+  // config sent
+  void handleSetup_();
 
-  // handles all buffered lines (logs, SETUP, ACK, NACK). Of the encoder
+  // forwards an "S,ACK,..." or "S,NACK,..." line to the handshake
+  void handleHandshakeReply_(const std::string &line);
+
+  // handles all buffered lines (logs, SETUP, ACK, NACK, encoder reports). Of the encoder
   // reports received since the last SETUP event, only the newest is processed
   void processNewLines_();
 

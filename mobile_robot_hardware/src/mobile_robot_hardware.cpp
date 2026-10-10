@@ -9,6 +9,7 @@
 #include <iterator>
 #include <limits>
 #include <stdexcept>
+#include <thread>
 #include <type_traits>
 #include <unordered_map>
 
@@ -152,10 +153,30 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
   return parsed;
 }
 
-// without a timeout, a dead esp32 would hang the lifecycle transition forever
-// instead of failing it
-constexpr std::chrono::milliseconds k_setup_timeout{5000};
-constexpr std::chrono::milliseconds k_ack_timeout{2000};
+// splits a handshake reply "<prefix><handshake id>[,<rest>]"
+// @return: false if the line has another prefix or no valid id
+bool parseHandshakeReply(const std::string &line, const std::string &prefix,
+                         uint32_t &id, std::string &rest) {
+  if (line.rfind(prefix, 0) != 0) {
+    return false;
+  }
+  const size_t comma = line.find(',', prefix.size());
+  const std::string idStr =
+      line.substr(prefix.size(), comma == std::string::npos
+                                     ? std::string::npos
+                                     : comma - prefix.size());
+  try {
+    size_t used = 0;
+    id = static_cast<uint32_t>(std::stoul(idStr, &used));
+    if (used != idStr.size()) {
+      return false;
+    }
+  } catch (const std::exception &) {
+    return false;
+  }
+  rest = comma == std::string::npos ? "" : line.substr(comma + 1);
+  return true;
+}
 
 // M,<left_vel_cmd>,<right_vel_cmd>\n
 std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
@@ -231,10 +252,12 @@ void MobileRobotHardware::Config::set(
   payload_ = newConfig;
 }
 
-std::string MobileRobotHardware::Config::serialize() const {
+std::string
+MobileRobotHardware::Config::serialize(uint32_t handshakeId) const {
   std::lock_guard<std::mutex> lock(mutex_);
   // invert_left/invert_right must go out as 0/1, not as true/false
-  return "C," + std::to_string(payload_.kp) + "," +
+  return "C," + std::to_string(handshakeId) + "," +
+         std::to_string(payload_.kp) + "," +
          std::to_string(payload_.ki) + "," +
          std::to_string(payload_.integral_limit) + "," +
          std::to_string(payload_.slope_left) + "," +
@@ -316,7 +339,7 @@ rcl_interfaces::msg::SetParametersResult MobileRobotHardware::onParamsSet_(
   }
 
   config_.set(candidate);
-  // read() sends the new values to the esp32
+  // read() starts a handshake that carries the new values to the esp32
   configChanged_ = true;
 
   return result;
@@ -338,58 +361,37 @@ bool MobileRobotHardware::readLine_(std::string &line,
   return true;
 }
 
-template <typename Predicate>
-std::optional<std::string>
-MobileRobotHardware::readLineUntil_(std::chrono::milliseconds timeout,
-                                    Predicate matches) {
-  const auto deadline = std::chrono::steady_clock::now() + timeout;
-  std::string line;
-  while (true) {
-    const auto remaining =
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            deadline - std::chrono::steady_clock::now());
-    if (remaining <= std::chrono::milliseconds(0) ||
-        !readLine_(line, remaining)) {
-      return {};
-    }
-    if (matches(line)) {
-      return line;
-    }
+void MobileRobotHardware::sendConfig_() {
+  try {
+    const std::string configLine = config_.serialize(handshake_.id());
+    serial_.port->send(
+        std::vector<uint8_t>(configLine.begin(), configLine.end()));
+  } catch (const std::exception &e) {
+    // the next retry or the handshake deadline decides what happens
+    RCLCPP_ERROR(this->get_logger(),
+                 "Failed to send configuration to esp32 on '%s': %s",
+                 serialPort_.c_str(), e.what());
   }
 }
 
-void MobileRobotHardware::performHandshake_(
-    std::chrono::milliseconds setupTimeout,
-    std::chrono::milliseconds ackTimeout) {
-  // check for setup event
-  {
-    auto ret = readLineUntil_(setupTimeout, [](const std::string &line) {
-      return line == "S,SETUP";
-    });
-    if (!ret.has_value()) {
-      RCLCPP_WARN(this->get_logger(), "No SETUP message received from esp32");
+void MobileRobotHardware::serviceHandshake_() {
+  if (handshake_.dueForSend(Handshake::Clock::now())) {
+    sendConfig_();
+  }
+}
+
+void MobileRobotHardware::awaitHandshake_() {
+  handshake_.start(Handshake::Clock::now());
+  while (handshake_.state() == Handshake::State::PENDING) {
+    processNewLines_();
+    serviceHandshake_();
+    if (handshake_.state() == Handshake::State::PENDING) {
+      std::this_thread::sleep_for(k_handshake_poll_interval);
     }
   }
-
-  // send config
-  const std::string configLine = config_.serialize();
-  serial_.port->send(
-      std::vector<uint8_t>(configLine.begin(), configLine.end()));
-
-  // wait for acknowledgment
-  auto ret = readLineUntil_(ackTimeout, [](const std::string &line) {
-    return line == "S,ACK" || line.rfind("S,NACK,", 0) == 0;
-  });
-  if (!ret.has_value()) {
-    throw std::runtime_error(
-        "timed out waiting for the esp32 to acknowledge the configuration");
+  if (handshake_.state() == Handshake::State::FAILED) {
+    throw std::runtime_error(handshake_.failureReason());
   }
-  if (ret.value().rfind("S,NACK,", 0) == 0) {
-    throw std::runtime_error("esp32 rejected configuration field '" +
-                             ret.value().substr(7) + "'");
-  }
-  RCLCPP_INFO(this->get_logger(), "esp32 on %s acknowledged configuration",
-              serialPort_.c_str());
 }
 
 CallbackReturn
@@ -430,7 +432,7 @@ MobileRobotHardware::on_configure(const rclcpp_lifecycle::State &) {
           serial_.rxCv.notify_all();
         });
 
-    performHandshake_(k_setup_timeout, k_ack_timeout);
+    awaitHandshake_();
   } catch (const std::exception &e) {
     RCLCPP_ERROR(this->get_logger(), "Failed to configure esp32 on '%s': %s",
                  serialPort_.c_str(), e.what());
@@ -498,25 +500,32 @@ void MobileRobotHardware::sendMotorCmd_(float leftVelCmd, float rightVelCmd) {
   serial_.port->send(std::vector<uint8_t>(cmd.begin(), cmd.end()));
 }
 
-void MobileRobotHardware::handleRestart_() {
-  RCLCPP_WARN(this->get_logger(),
-              "esp32 on %s sent a SETUP event while active, assuming it "
-              "restarted; resending configuration",
+void MobileRobotHardware::handleSetup_() {
+  RCLCPP_WARN(this->get_logger(), "esp32 on %s is waiting for a configuration",
               serialPort_.c_str());
 
+  // a restarted esp32 counts ticks from zero again
   ticks_.leftLast = 0;
   ticks_.rightLast = 0;
   hasEncoderBaseline_ = false;
 
-  try {
-    const std::string configLine = config_.serialize();
-    serial_.port->send(
-        std::vector<uint8_t>(configLine.begin(), configLine.end()));
-  } catch (const std::exception &e) {
-    RCLCPP_ERROR(this->get_logger(),
-                 "Failed to resend configuration to esp32 on '%s': %s",
-                 serialPort_.c_str(), e.what());
+  handshake_.onSetup(Handshake::Clock::now());
+}
+
+void MobileRobotHardware::handleHandshakeReply_(const std::string &line) {
+  uint32_t id = 0;
+  std::string field;
+  if (parseHandshakeReply(line, "S,ACK,", id, field)) {
+    const bool wasPending = handshake_.state() == Handshake::State::PENDING;
+    handshake_.onAck(id);
+    if (wasPending && handshake_.state() == Handshake::State::CONFIGURED) {
+      RCLCPP_INFO(this->get_logger(), "esp32 on %s acknowledged configuration",
+                  serialPort_.c_str());
+    }
+  } else if (parseHandshakeReply(line, "S,NACK,", id, field)) {
+    handshake_.onNack(id, field);
   }
+  // anything else is not a reply to the running handshake
 }
 
 CallbackReturn
@@ -585,14 +594,11 @@ void MobileRobotHardware::processNewLines_() {
     if (line.rfind("L,", 0) == 0) {
       RCLCPP_INFO(this->get_logger(), "esp32: %s", line.c_str() + 2);
     } else if (line == "S,SETUP") {
-      handleRestart_();
+      handleSetup_();
       // encoder lines from before the restart belong to the old tick counter
       latestEncoderLine.reset();
-    } else if (line == "S,ACK") {
-      RCLCPP_INFO(this->get_logger(), "esp32 sent ACK");
-    } else if (line.rfind("S,NACK,", 0) == 0) {
-      RCLCPP_ERROR(this->get_logger(), "esp32 sent NACK, '%s'",
-                   line.c_str() + 7);
+    } else if (line.rfind("S,ACK,", 0) == 0 || line.rfind("S,NACK,", 0) == 0) {
+      handleHandshakeReply_(line);
     } else if (line.rfind("E,", 0) == 0) {
       latestEncoderLine = line;
     }
@@ -663,18 +669,11 @@ return_type MobileRobotHardware::read(const rclcpp::Time &,
   if (configChanged_.exchange(false)) {
     RCLCPP_INFO(this->get_logger(),
                 "Configuration changed, sending it to the esp32");
-    try {
-      const std::string configLine = config_.serialize();
-      serial_.port->send(
-          std::vector<uint8_t>(configLine.begin(), configLine.end()));
-    } catch (const std::exception &e) {
-      RCLCPP_ERROR(this->get_logger(),
-                   "Failed to send configuration to esp32 on '%s': %s",
-                   serialPort_.c_str(), e.what());
-    }
+    handshake_.start(Handshake::Clock::now());
   }
 
   processNewLines_();
+  serviceHandshake_();
   return return_type::OK;
 }
 

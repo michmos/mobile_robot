@@ -50,6 +50,21 @@ protected:
     return (uint16_t)val;
   }
 
+  uint32_t parseUInt32_(const char *str, bool *errFlag) {
+    if (!str) {
+      *errFlag = true;
+      return 0;
+    }
+
+    char *endptr = NULL;
+    unsigned long long val = strtoull(str, &endptr, 10);
+    if (endptr == str || *endptr != '\0' || val == 0 || val > UINT32_MAX) {
+      *errFlag = true;
+      return 0;
+    }
+    return (uint32_t)val;
+  }
+
   bool parseBool_(const char *str, bool *errFlag) {
     uint16_t val = parseUInt16_(str, errFlag);
     if (val > 1) {
@@ -94,13 +109,15 @@ public:
   }
 };
 
-// C,<kp>,<ki>,<integral_limit>,<slope_left>,<slope_right>,<min_duty_left>,
-//   <min_duty_right>,<ticks_per_wheel_rev>,
+// C,<handshake_ts>,<kp>,<ki>,<integral_limit>,<slope_left>,<slope_right>,
+//   <min_duty_left>,<min_duty_right>,<ticks_per_wheel_rev>,
 //   <watchdog_timeout_ms>,<control_rate_hz>,<report_rate_hz>,
 //   <invert_left>,<invert_right>\n
 //
-// sent once by the pi after it sees the SETUP event, and re-sent whenever the
-// esp32 reboots
+// sent by the pi in answer to every SETUP event and re-sent until the esp32
+// answers with an ACK or NACK carrying the same handshake_ts. All re-sends of
+// one handshake carry the same non-zero handshake_ts, a new handshake gets a
+// new one
 //
 // the payload fields and their range check live in ConfigPayload.hpp, which the
 // pi shares, so both ends agree on what a valid configuration is
@@ -108,8 +125,8 @@ class Config : public AReceiveMessage, public protocol::ConfigPayload {
 public:
   bool initialized;
 
-  // set when the message was parsed
-  unsigned long timestamp_ms;
+  // handshake_ts chosen by the pi, 0 until a message was parsed
+  uint32_t timestamp_ms;
 
   Config() : initialized(false), timestamp_ms(0), lastError_(NULL) {}
 
@@ -123,6 +140,8 @@ public:
     }
 
     bool errFlag = false;
+    // parsed first so a NACK can name the handshake even if the rest is bad
+    timestamp_ms = parseUInt32_(strtok(NULL, ","), &errFlag);
     protocol::ConfigPayload parsed;
     parsed.kp = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.ki = parseFloat_(strtok(NULL, ","), &errFlag);
@@ -153,7 +172,6 @@ public:
 
     static_cast<protocol::ConfigPayload &>(*this) = parsed;
     initialized = true;
-    timestamp_ms = millis();
     lastError_ = NULL;
     return 0;
   }
@@ -225,12 +243,14 @@ public:
 };
 
 // S,<event_string>[,<detail>]
+// ACK detail: <handshake_ts>, NACK detail: <handshake_ts>,<field>
 class Event : public ASendMessage {
 public:
   enum e_event_type {
-    SETUP, // starting setup
-    ACK,   // acknowledge receipt of configuration data
-    NACK,  // configuration rejected, detail names the offending field
+    SETUP, // unconfigured, sent as a beacon until a configuration is applied
+    ACK,   // configuration with the handshake_ts in detail is applied
+    NACK,  // configuration with the handshake_ts in detail was rejected, the
+           // field after it names the offending field
   } e;
 
   Event(e_event_type e) : e(e), detail_() {}
