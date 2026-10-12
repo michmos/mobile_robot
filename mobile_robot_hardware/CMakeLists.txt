@@ -96,9 +96,12 @@ if(BUILD_TESTING)
     test/test_wire_protocol.cpp
     src/wire_protocol.cpp
   )
+  # the round trip tests parse with the firmware's own msgs::Config, which
+  # only needs millis() from the Arduino core
   target_include_directories(test_wire_protocol PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
 endif()
 

@@ -1,20 +1,35 @@
 #include "mobile_robot_hardware/wire_protocol.hpp"
 
+#include <cstdio>
 #include <limits>
 
 namespace mobile_robot_hardware {
 
+namespace {
+
+// std::to_string(float) prints 6 fixed decimals, which turns e.g. 1e-7 into
+// "0.000000" and 0.99999994 into "1.000000" - values that pass
+// validateConfig() on the pi but not on the esp32. 9 significant digits
+// round-trip every float exactly, so both ends validate the same value
+std::string formatFloat(float value) {
+  char buf[32];
+  std::snprintf(buf, sizeof(buf), "%.9g", static_cast<double>(value));
+  return buf;
+}
+
+} // namespace
+
 std::string serializeConfig(const protocol::ConfigPayload &payload,
                             uint32_t handshakeId) {
   // invert_left/invert_right must go out as 0/1, not as true/false
-  return "C," + std::to_string(handshakeId) + "," +
-         std::to_string(payload.kp) + "," + std::to_string(payload.ki) + "," +
-         std::to_string(payload.integral_limit) + "," +
-         std::to_string(payload.slope_left) + "," +
-         std::to_string(payload.slope_right) + "," +
-         std::to_string(payload.min_duty_left) + "," +
-         std::to_string(payload.min_duty_right) + "," +
-         std::to_string(payload.ticks_per_wheel_rev) + "," +
+  return "C," + std::to_string(handshakeId) + "," + formatFloat(payload.kp) +
+         "," + formatFloat(payload.ki) + "," +
+         formatFloat(payload.integral_limit) + "," +
+         formatFloat(payload.slope_left) + "," +
+         formatFloat(payload.slope_right) + "," +
+         formatFloat(payload.min_duty_left) + "," +
+         formatFloat(payload.min_duty_right) + "," +
+         formatFloat(payload.ticks_per_wheel_rev) + "," +
          std::to_string(payload.watchdog_timeout_ms) + "," +
          std::to_string(payload.control_rate_hz) + "," +
          std::to_string(payload.report_rate_hz) + "," +

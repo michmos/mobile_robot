@@ -13,6 +13,8 @@
 namespace mobile_robot_hardware {
 
 // C,<handshake_id>,<kp>,...,<invert_right>\n
+// floats are written with enough digits that the esp32 parses back exactly
+// the value the pi validated
 std::string serializeConfig(const protocol::ConfigPayload &payload,
                             uint32_t handshakeId);
 
