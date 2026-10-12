@@ -124,9 +124,23 @@ TEST_F(HandshakeTest, SetupWhileFailedStartsNewHandshake) {
 
 TEST_F(HandshakeTest, SetupWhilePendingKeepsHandshake) {
   const uint32_t id = hs.start(at(1000));
+  ASSERT_TRUE(hs.dueForSend(at(1000)));
+
   EXPECT_FALSE(hs.onSetup(at(1100)));
   EXPECT_EQ(hs.state(), State::PENDING);
   EXPECT_EQ(hs.id(), id);
+}
+
+TEST_F(HandshakeTest, SetupWhilePendingKeepsRetryInterval) {
+  hs.start(at(1000));
+  ASSERT_TRUE(hs.dueForSend(at(1000)));
+
+  // a burst of SETUPs must not make the config due before the retry interval
+  for (int64_t t = 1010; t < 1500; t += 10) {
+    hs.onSetup(at(t));
+    EXPECT_FALSE(hs.dueForSend(at(t))) << "at " << t << " ms";
+  }
+  EXPECT_TRUE(hs.dueForSend(at(1500)));
 }
 
 TEST_F(HandshakeTest, IdIsNeverZero) {

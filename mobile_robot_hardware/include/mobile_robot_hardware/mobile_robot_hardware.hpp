@@ -185,8 +185,8 @@ private:
   void sendMotorCmd_(float leftVelCmd, float rightVelCmd);
 
   // handles a SETUP event: the esp32 is unconfigured, e.g. it restarted. Marks
-  // the tick offsets for recalculation on the next encoder sample and has the
-  // config sent
+  // the tick offsets for recalculation on the next encoder sample and starts a
+  // handshake unless one is running
   void handleSetup_();
 
   // forwards an "S,ACK,..." or "S,NACK,..." line to the handshake

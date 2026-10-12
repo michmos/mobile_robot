@@ -501,15 +501,17 @@ void MobileRobotHardware::sendMotorCmd_(float leftVelCmd, float rightVelCmd) {
 }
 
 void MobileRobotHardware::handleSetup_() {
-  RCLCPP_WARN(this->get_logger(), "esp32 on %s is waiting for a configuration",
-              serialPort_.c_str());
-
   // a restarted esp32 counts ticks from zero again
   ticks_.leftLast = 0;
   ticks_.rightLast = 0;
   hasEncoderBaseline_ = false;
 
-  handshake_.onSetup(Handshake::Clock::now());
+  // the esp32 repeats SETUP until configured, only report the first one
+  if (handshake_.onSetup(Handshake::Clock::now())) {
+    RCLCPP_WARN(this->get_logger(),
+                "esp32 on %s is waiting for a configuration",
+                serialPort_.c_str());
+  }
 }
 
 void MobileRobotHardware::handleHandshakeReply_(const std::string &line) {

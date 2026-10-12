@@ -66,11 +66,10 @@ public:
   }
 
   // the esp32 asks for a configuration. A handshake that is already running
-  // just gets its config sent again right away
+  // is left alone, its retry interval already re-sends the config
   // @return: true if the SETUP started a new handshake
   bool onSetup(Clock::time_point now) {
     if (state_ == State::PENDING) {
-      nextSendAt_ = now;
       return false;
     }
     start(now);
