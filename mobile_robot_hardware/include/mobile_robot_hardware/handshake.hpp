@@ -37,7 +37,8 @@ public:
     // 0 is reserved as "no handshake" on the wire
     id_ = static_cast<uint32_t>(ms) == 0 ? 1 : static_cast<uint32_t>(ms);
     if (id_ == previousId_) {
-      ++id_;
+      // skip 0 when wrapping around UINT32_MAX
+      id_ = id_ == UINT32_MAX ? 1 : id_ + 1;
     }
     previousId_ = id_;
     state_ = State::PENDING;
