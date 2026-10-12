@@ -18,6 +18,15 @@ namespace mobile_robot_hardware {
 std::string serializeConfig(const protocol::ConfigPayload &payload,
                             uint32_t handshakeId);
 
+// M,<left_vel_cmd>,<right_vel_cmd>\n, velocities in rad/s
+std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd);
+
+// E,<left_ticks>,<right_ticks>,<us>\n - see EncoderData in
+// esp32_firmware/inc/Messages.hpp. `line` has its trailing '\n' stripped
+// @throws std::runtime_error if the line is malformed
+void parseEncoderReport(const std::string &line, int32_t &leftTicks,
+                        int32_t &rightTicks, uint32_t &timestampUs);
+
 // splits a handshake reply "<prefix><handshake id>[,<rest>]"
 // the id has to be plain decimal digits and fit into uint32_t
 // @return: false if the line has another prefix or no valid id

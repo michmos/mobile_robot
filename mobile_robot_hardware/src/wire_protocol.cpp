@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <limits>
+#include <stdexcept>
 
 namespace mobile_robot_hardware {
 
@@ -45,6 +46,33 @@ std::string serializeConfig(const protocol::ConfigPayload &payload,
   std::snprintf(crc, sizeof(crc), "%04X",
                 protocol::crc16(body.c_str(), body.size()));
   return body + "," + crc + "\n";
+}
+
+std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
+  return "M," + formatFloat(leftVelCmd) + "," + formatFloat(rightVelCmd) +
+         "\n";
+}
+
+void parseEncoderReport(const std::string &line, int32_t &leftTicks,
+                        int32_t &rightTicks, uint32_t &timestampUs) {
+  const size_t p1 = line.find(',');
+  const size_t p2 =
+      p1 == std::string::npos ? std::string::npos : line.find(',', p1 + 1);
+  const size_t p3 =
+      p2 == std::string::npos ? std::string::npos : line.find(',', p2 + 1);
+  if (p1 == std::string::npos || p2 == std::string::npos ||
+      p3 == std::string::npos || line.substr(0, p1) != "E") {
+    throw std::runtime_error("malformed encoder report: '" + line + "'");
+  }
+
+  try {
+    leftTicks = std::stol(line.substr(p1 + 1, p2 - p1 - 1));
+    rightTicks = std::stol(line.substr(p2 + 1, p3 - p2 - 1));
+    timestampUs = static_cast<uint32_t>(std::stoul(line.substr(p3 + 1)));
+  } catch (const std::exception &e) {
+    throw std::runtime_error("malformed encoder report: '" + line +
+                             "': " + e.what());
+  }
 }
 
 bool parseHandshakeReply(const std::string &line, const std::string &prefix,

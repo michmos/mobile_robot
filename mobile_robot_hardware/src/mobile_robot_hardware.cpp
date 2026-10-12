@@ -154,36 +154,6 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
   return parsed;
 }
 
-// M,<left_vel_cmd>,<right_vel_cmd>\n
-std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
-  return "M," + std::to_string(leftVelCmd) + "," + std::to_string(rightVelCmd) +
-         "\n";
-}
-// E,<left_ticks>,<right_ticks>,<us>\n - see esp32_firmware/inc/Messages.hpp
-// EncoderData; line has already had its trailing '\n' stripped by readLine_
-// @throws std::runtime_error if the line is malformed
-void parseEncoderReport(const std::string &line, int32_t &leftTicks,
-                        int32_t &rightTicks, uint32_t &timestampUs) {
-  const size_t p1 = line.find(',');
-  const size_t p2 =
-      p1 == std::string::npos ? std::string::npos : line.find(',', p1 + 1);
-  const size_t p3 =
-      p2 == std::string::npos ? std::string::npos : line.find(',', p2 + 1);
-  if (p1 == std::string::npos || p2 == std::string::npos ||
-      p3 == std::string::npos || line.substr(0, p1) != "E") {
-    throw std::runtime_error("malformed encoder report: '" + line + "'");
-  }
-
-  try {
-    leftTicks = std::stol(line.substr(p1 + 1, p2 - p1 - 1));
-    rightTicks = std::stol(line.substr(p2 + 1, p3 - p2 - 1));
-    timestampUs = static_cast<uint32_t>(std::stoul(line.substr(p3 + 1)));
-  } catch (const std::exception &e) {
-    throw std::runtime_error("malformed encoder report: '" + line +
-                             "': " + e.what());
-  }
-}
-
 double ticksToRad(int32_t ticks, float ticksPerWheelRev) {
   return (ticks * 2.0 * M_PI) / ticksPerWheelRev;
 }

@@ -9,10 +9,15 @@
 #include <cmath>
 #include <cctype>
 #include <cstdio>
+#include <limits>
+#include <stdexcept>
 #include <cstdint>
+#include <utility>
 #include <string>
 
+using mobile_robot_hardware::parseEncoderReport;
 using mobile_robot_hardware::parseHandshakeReply;
+using mobile_robot_hardware::serializeMotorCmd;
 using mobile_robot_hardware::serializeConfig;
 
 namespace {
@@ -286,4 +291,43 @@ TEST(FirmwareConfigParser, AcceptsLowercaseChecksum) {
   }
   msgs::Config parsed;
   EXPECT_EQ(parsed.init(line), 0) << line << ": " << parsed.lastError();
+}
+
+TEST(SerializeMotorCmd, RoundTripThroughFirmwareParser) {
+  // to_string's 6 fixed decimals would turn 1e-7 into 0 and cut 1.23456789
+  for (const auto &cmd : {std::make_pair(0.0f, 0.0f),
+                          std::make_pair(1.5f, -1.5f),
+                          std::make_pair(1e-7f, -1.23456789f),
+                          std::make_pair(-30.25f, 12345.678f)}) {
+    const std::string line = serializeMotorCmd(cmd.first, cmd.second);
+    ASSERT_EQ(line.back(), '\n');
+    msgs::MotorCmd received;
+    ASSERT_EQ(received.init(stripNewline(line)), 0) << line;
+    EXPECT_EQ(received.left_vel_cmd, cmd.first) << line;
+    EXPECT_EQ(received.right_vel_cmd, cmd.second) << line;
+  }
+}
+
+TEST(ParseEncoderReport, RoundTripFromFirmware) {
+  const int32_t lo = std::numeric_limits<int32_t>::min();
+  const int32_t hi = std::numeric_limits<int32_t>::max();
+  const msgs::EncoderData sent(lo, hi, 4294967295u);
+
+  int32_t left = 0, right = 0;
+  uint32_t us = 0;
+  parseEncoderReport(stripNewline(sent.serialize()), left, right, us);
+  EXPECT_EQ(left, lo);
+  EXPECT_EQ(right, hi);
+  EXPECT_EQ(us, 4294967295u);
+}
+
+TEST(ParseEncoderReport, RejectsMalformedLines) {
+  int32_t left = 0, right = 0;
+  uint32_t us = 0;
+  for (const std::string line : {"", "E", "E,1,2", "X,1,2,3", "E,a,2,3",
+                                 "E,1,,3", "E,1,2,"}) {
+    EXPECT_THROW(parseEncoderReport(line, left, right, us),
+                 std::runtime_error)
+        << "'" << line << "'";
+  }
 }
