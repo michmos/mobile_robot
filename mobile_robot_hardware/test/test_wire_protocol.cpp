@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <cstdint>
 #include <utility>
+#include <vector>
 #include <string>
 
 using mobile_robot_hardware::parseEncoderReport;
@@ -330,4 +331,48 @@ TEST(ParseEncoderReport, RejectsMalformedLines) {
                  std::runtime_error)
         << "'" << line << "'";
   }
+}
+
+// the esp32 skips a config only if id and payload match what it runs, so a
+// pi restart that reuses an id with other values is still applied
+TEST(SamePayload, ComparesEveryField) {
+  const protocol::ConfigPayload base = samplePayload();
+  EXPECT_TRUE(protocol::samePayload(base, base));
+
+  std::vector<void (*)(protocol::ConfigPayload &)> changes = {
+      [](protocol::ConfigPayload &p) { p.kp += 0.1f; },
+      [](protocol::ConfigPayload &p) { p.ki += 0.1f; },
+      [](protocol::ConfigPayload &p) { p.integral_limit += 0.1f; },
+      [](protocol::ConfigPayload &p) { p.slope_left += 0.1f; },
+      [](protocol::ConfigPayload &p) { p.slope_right += 0.1f; },
+      [](protocol::ConfigPayload &p) { p.min_duty_left += 0.1f; },
+      [](protocol::ConfigPayload &p) { p.min_duty_right += 0.1f; },
+      [](protocol::ConfigPayload &p) { p.ticks_per_wheel_rev += 1.0f; },
+      [](protocol::ConfigPayload &p) { ++p.watchdog_timeout_ms; },
+      [](protocol::ConfigPayload &p) { ++p.control_rate_hz; },
+      [](protocol::ConfigPayload &p) { ++p.report_rate_hz; },
+      [](protocol::ConfigPayload &p) { p.invert_left = !p.invert_left; },
+      [](protocol::ConfigPayload &p) { p.invert_right = !p.invert_right; },
+  };
+  for (size_t i = 0; i < changes.size(); ++i) {
+    protocol::ConfigPayload changed = base;
+    changes[i](changed);
+    EXPECT_FALSE(protocol::samePayload(base, changed)) << "field " << i;
+  }
+}
+
+TEST(SamePayload, SameIdDifferentValuesAfterRoundTrip) {
+  protocol::ConfigPayload first = samplePayload();
+  protocol::ConfigPayload second = first;
+  second.kp = 0.5f;
+
+  msgs::Config applied, resent;
+  ASSERT_EQ(applied.init(stripNewline(serializeConfig(first, 1234))), 0);
+  ASSERT_EQ(resent.init(stripNewline(serializeConfig(first, 1234))), 0);
+  msgs::Config reused;
+  ASSERT_EQ(reused.init(stripNewline(serializeConfig(second, 1234))), 0);
+
+  // a plain re-send is skipped, a reused id with other values is not
+  EXPECT_TRUE(protocol::samePayload(applied, resent));
+  EXPECT_FALSE(protocol::samePayload(applied, reused));
 }

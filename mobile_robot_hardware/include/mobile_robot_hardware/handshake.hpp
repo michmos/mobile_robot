@@ -13,9 +13,10 @@ namespace mobile_robot_hardware {
 // One handshake is identified by the id the pi puts into the config line.
 // Re-sends keep the id, the esp32 echoes it in ACK/NACK, so replies that
 // belong to an older handshake can be told apart and ignored.
-// Ids are strictly increasing: the esp32 skips a config whose id it already
-// applied but still ACKs it, so a repeated id would get a new payload ACKed
-// without it being applied.
+// Ids are strictly increasing within one plugin run, so a reply can always be
+// matched to its handshake. Across runs (pi reboot, 32 bit ms wrap) an id can
+// come up again; the esp32 then still applies the config because it only
+// skips a re-send if both id and payload match what it runs.
 // No I/O and no clock of its own: the caller passes the time in
 class Handshake {
 public:
@@ -35,8 +36,8 @@ public:
   // begin a new handshake, the config is due immediately
   // @return: the id to put into the config line, never 0
   uint32_t start(Clock::time_point now) {
-    // based on the time rather than a counter, so a restarted plugin doesn't
-    // reuse the id the esp32 last applied
+    // based on the time rather than a counter, so a restarted plugin rarely
+    // reuses the id the esp32 last applied
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         now.time_since_epoch())
                         .count();

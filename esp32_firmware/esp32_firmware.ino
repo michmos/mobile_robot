@@ -157,7 +157,10 @@ bool updateConfig() {
     return false;
   }
 
-  if (g_config.initialized && received.handshake_id == g_config.handshake_id) {
+  // a re-send of the handshake already applied. The id alone isn't enough:
+  // a restarted pi can reuse the id the esp32 last applied, with other values
+  if (g_config.initialized && received.handshake_id == g_config.handshake_id &&
+      protocol::samePayload(received, g_config)) {
     return false;
   }
 
