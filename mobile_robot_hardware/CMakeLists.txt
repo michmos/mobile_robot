@@ -18,6 +18,7 @@ find_package(serial_driver REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_hardware.cpp
+  src/wire_protocol.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -89,6 +90,15 @@ if(BUILD_TESTING)
   ament_add_gtest(test_handshake test/test_handshake.cpp)
   target_include_directories(test_handshake PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+
+  ament_add_gtest(test_wire_protocol
+    test/test_wire_protocol.cpp
+    src/wire_protocol.cpp
+  )
+  target_include_directories(test_wire_protocol PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
   )
 endif()
 

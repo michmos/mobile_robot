@@ -1,4 +1,5 @@
 #include "mobile_robot_hardware/mobile_robot_hardware.hpp"
+#include "mobile_robot_hardware/wire_protocol.hpp"
 
 #include <hardware_interface/lexical_casts.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
@@ -153,31 +154,6 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
   return parsed;
 }
 
-// splits a handshake reply "<prefix><handshake id>[,<rest>]"
-// @return: false if the line has another prefix or no valid id
-bool parseHandshakeReply(const std::string &line, const std::string &prefix,
-                         uint32_t &id, std::string &rest) {
-  if (line.rfind(prefix, 0) != 0) {
-    return false;
-  }
-  const size_t comma = line.find(',', prefix.size());
-  const std::string idStr =
-      line.substr(prefix.size(), comma == std::string::npos
-                                     ? std::string::npos
-                                     : comma - prefix.size());
-  try {
-    size_t used = 0;
-    id = static_cast<uint32_t>(std::stoul(idStr, &used));
-    if (used != idStr.size()) {
-      return false;
-    }
-  } catch (const std::exception &) {
-    return false;
-  }
-  rest = comma == std::string::npos ? "" : line.substr(comma + 1);
-  return true;
-}
-
 // M,<left_vel_cmd>,<right_vel_cmd>\n
 std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
   return "M," + std::to_string(leftVelCmd) + "," + std::to_string(rightVelCmd) +
@@ -255,21 +231,7 @@ void MobileRobotHardware::Config::set(
 std::string
 MobileRobotHardware::Config::serialize(uint32_t handshakeId) const {
   std::lock_guard<std::mutex> lock(mutex_);
-  // invert_left/invert_right must go out as 0/1, not as true/false
-  return "C," + std::to_string(handshakeId) + "," +
-         std::to_string(payload_.kp) + "," +
-         std::to_string(payload_.ki) + "," +
-         std::to_string(payload_.integral_limit) + "," +
-         std::to_string(payload_.slope_left) + "," +
-         std::to_string(payload_.slope_right) + "," +
-         std::to_string(payload_.min_duty_left) + "," +
-         std::to_string(payload_.min_duty_right) + "," +
-         std::to_string(payload_.ticks_per_wheel_rev) + "," +
-         std::to_string(payload_.watchdog_timeout_ms) + "," +
-         std::to_string(payload_.control_rate_hz) + "," +
-         std::to_string(payload_.report_rate_hz) + "," +
-         std::string(payload_.invert_left ? "1" : "0") + "," +
-         std::string(payload_.invert_right ? "1" : "0") + "\n";
+  return serializeConfig(payload_, handshakeId);
 }
 
 void MobileRobotHardware::declareTunableParams_() {
