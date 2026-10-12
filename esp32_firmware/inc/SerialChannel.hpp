@@ -47,12 +47,12 @@ private:
       if (config.init(line) == -1) {
         writeln(msgs::Log("Invalid config received: " + line));
         writeln(
-            msgs::Event(msgs::Event::NACK, std::to_string(config.timestamp_ms) +
+            msgs::Event(msgs::Event::NACK, std::to_string(config.handshake_id) +
                                                "," + config.lastError()));
         return;
       }
       writeln(
-          msgs::Event(msgs::Event::ACK, std::to_string(config.timestamp_ms)));
+          msgs::Event(msgs::Event::ACK, std::to_string(config.handshake_id)));
       lastConfig_ = config;
     } break;
     default: {

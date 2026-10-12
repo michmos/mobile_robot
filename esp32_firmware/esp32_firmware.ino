@@ -157,7 +157,7 @@ bool updateConfig() {
     return false;
   }
 
-  if (g_config.initialized && received.timestamp_ms == g_config.timestamp_ms) {
+  if (g_config.initialized && received.handshake_id == g_config.handshake_id) {
     return false;
   }
 

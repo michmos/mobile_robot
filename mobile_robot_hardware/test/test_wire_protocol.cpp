@@ -154,7 +154,7 @@ TEST(SerializeConfig, RoundTripThroughFirmwareParser) {
   ASSERT_EQ(received.init(stripNewline(serializeConfig(sent, 4000000000u))), 0)
       << received.lastError();
   EXPECT_TRUE(received.initialized);
-  EXPECT_EQ(received.timestamp_ms, 4000000000u);
+  EXPECT_EQ(received.handshake_id, 4000000000u);
   expectSamePayload(sent, received);
 }
 
@@ -216,5 +216,5 @@ TEST(FirmwareConfigParser, NamesOutOfRangeFieldButKeepsId) {
   EXPECT_EQ(c.init(stripNewline(serializeConfig(p, 55))), -1);
   EXPECT_STREQ(c.lastError(), "slope_left");
   // the NACK names the handshake even though the config was rejected
-  EXPECT_EQ(c.timestamp_ms, 55u);
+  EXPECT_EQ(c.handshake_id, 55u);
 }

@@ -109,16 +109,17 @@ public:
   }
 };
 
-// C,<handshake_ts>,<kp>,<ki>,<integral_limit>,<slope_left>,<slope_right>,
+// C,<handshake_id>,<kp>,<ki>,<integral_limit>,<slope_left>,<slope_right>,
 //   <min_duty_left>,<min_duty_right>,<ticks_per_wheel_rev>,
 //   <watchdog_timeout_ms>,<control_rate_hz>,<report_rate_hz>,
 //   <invert_left>,<invert_right>\n
 //
-// sent by the pi in answer to every SETUP event and re-sent until the esp32
-// answers with an ACK or NACK carrying the same handshake_ts. All re-sends of
-// one handshake carry the same non-zero handshake_ts and the same payload, a
-// new handshake (e.g. changed values) gets a new handshake_ts. So ACKing a
-// re-send of an already applied handshake_ts is correct
+// the pi starts a handshake when it configures, when a SETUP arrives while no
+// handshake is running, and when parameters change. It re-sends the config
+// until the esp32 ACKs the same handshake_id (a NACK is retried as well).
+// All re-sends of one handshake carry the same non-zero handshake_id and the
+// same payload, a new handshake gets a new, higher handshake_id. So ACKing a
+// re-send of an already applied handshake_id is correct
 //
 // the payload fields and their range check live in ConfigPayload.hpp, which the
 // pi shares, so both ends agree on what a valid configuration is
@@ -126,10 +127,10 @@ class Config : public AReceiveMessage, public protocol::ConfigPayload {
 public:
   bool initialized;
 
-  // handshake_ts chosen by the pi, 0 until a message was parsed
-  uint32_t timestamp_ms;
+  // chosen by the pi, 0 until a message was parsed
+  uint32_t handshake_id;
 
-  Config() : initialized(false), timestamp_ms(0), lastError_(NULL) {}
+  Config() : initialized(false), handshake_id(0), lastError_(NULL) {}
 
   int init(const std::string &line) override {
     std::string copy = line;
@@ -142,7 +143,7 @@ public:
 
     bool errFlag = false;
     // parsed first so a NACK can name the handshake even if the rest is bad
-    timestamp_ms = parseUInt32_(strtok(NULL, ","), &errFlag);
+    handshake_id = parseUInt32_(strtok(NULL, ","), &errFlag);
     protocol::ConfigPayload parsed;
     parsed.kp = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.ki = parseFloat_(strtok(NULL, ","), &errFlag);
@@ -244,13 +245,13 @@ public:
 };
 
 // S,<event_string>[,<detail>]
-// ACK detail: <handshake_ts>, NACK detail: <handshake_ts>,<field>
+// ACK detail: <handshake_id>, NACK detail: <handshake_id>,<field>
 class Event : public ASendMessage {
 public:
   enum e_event_type {
     SETUP, // unconfigured, sent as a beacon until a configuration is applied
-    ACK,   // configuration with the handshake_ts in detail is applied
-    NACK,  // configuration with the handshake_ts in detail was rejected, the
+    ACK,   // configuration with the handshake_id in detail is applied
+    NACK,  // configuration with the handshake_id in detail was rejected, the
            // field after it names the offending field
   } e;
 
