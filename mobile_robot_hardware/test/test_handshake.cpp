@@ -49,6 +49,18 @@ TEST_F(HandshakeTest, ResendsEveryRetryInterval) {
   EXPECT_TRUE(hs.dueForSend(at(2000)));
 }
 
+TEST_F(HandshakeTest, NextEventIsResendThenDeadline) {
+  hs.start(at(1000));
+  EXPECT_EQ(hs.nextEventAt(), at(1000));
+  ASSERT_TRUE(hs.dueForSend(at(1000)));
+  EXPECT_EQ(hs.nextEventAt(), at(1500));
+
+  // after a send at 10900 the next re-send (11400) would be past the
+  // deadline at 11000, so the deadline comes first
+  ASSERT_TRUE(hs.dueForSend(at(10900)));
+  EXPECT_EQ(hs.nextEventAt(), at(11000));
+}
+
 TEST_F(HandshakeTest, FailsAfterTimeout) {
   hs.start(at(1000));
   EXPECT_TRUE(hs.dueForSend(at(10999)));

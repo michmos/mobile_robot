@@ -74,7 +74,6 @@ private:
   // has to cover the esp32 booting after the port was opened. Without a
   // deadline a dead esp32 would hang the lifecycle transition forever
   static constexpr std::chrono::milliseconds k_handshake_timeout{10000};
-  static constexpr std::chrono::milliseconds k_handshake_poll_interval{10};
 
   // only touched by on_configure() and the realtime loop, which never run
   // concurrently
@@ -176,6 +175,9 @@ private:
   // @param line: initialized with retrieved line
   // @param timeout: time to wait for '\n'
   bool readLine_(std::string &line, std::chrono::milliseconds timeout);
+
+  // blocks until a complete line is buffered or `deadline` has passed
+  void waitForLine_(Handshake::Clock::time_point deadline);
 
   // starts a handshake that sends `payload`
   void startHandshake_(const protocol::ConfigPayload &payload);

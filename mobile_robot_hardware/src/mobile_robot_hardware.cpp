@@ -10,7 +10,6 @@
 #include <iterator>
 #include <limits>
 #include <stdexcept>
-#include <thread>
 #include <type_traits>
 #include <unordered_map>
 
@@ -297,6 +296,13 @@ bool MobileRobotHardware::readLine_(std::string &line,
   return true;
 }
 
+void MobileRobotHardware::waitForLine_(Handshake::Clock::time_point deadline) {
+  std::unique_lock<std::mutex> lock(serial_.rxMutex);
+  serial_.rxCv.wait_until(lock, deadline, [this] {
+    return serial_.rxBuffer.find('\n') != std::string::npos;
+  });
+}
+
 void MobileRobotHardware::sendConfig_() {
   try {
     const std::string configLine =
@@ -335,7 +341,8 @@ void MobileRobotHardware::awaitHandshake_() {
     processNewLines_();
     serviceHandshake_();
     if (handshake_.state() == Handshake::State::PENDING) {
-      std::this_thread::sleep_for(k_handshake_poll_interval);
+      // wake up for the esp32's reply, the next re-send or the deadline
+      waitForLine_(handshake_.nextEventAt());
     }
   }
   if (handshake_.state() == Handshake::State::FAILED) {

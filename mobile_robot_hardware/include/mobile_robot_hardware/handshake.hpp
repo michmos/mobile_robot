@@ -1,6 +1,7 @@
 #ifndef MOBILE_ROBOT_HARDWARE_HANDSHAKE_HPP
 #define MOBILE_ROBOT_HARDWARE_HANDSHAKE_HPP
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -111,6 +112,12 @@ public:
     }
     lastNackField_ = field;
     return true;
+  }
+
+  // when dueForSend() next has something to do: a re-send or the deadline.
+  // Only meaningful while PENDING
+  Clock::time_point nextEventAt() const {
+    return std::min(nextSendAt_, startedAt_ + timeout_);
   }
 
   State state() const { return state_; }
