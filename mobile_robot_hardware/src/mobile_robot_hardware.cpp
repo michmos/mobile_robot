@@ -283,10 +283,7 @@ rcl_interfaces::msg::SetParametersResult MobileRobotHardware::onParamsSet_(
 bool MobileRobotHardware::readLine_(std::string &line,
                                     std::chrono::milliseconds timeout) {
   std::unique_lock<std::mutex> lock(serial_.rxMutex);
-  const auto hasLine = [this] {
-    return serial_.rxBuffer.find('\n') != std::string::npos;
-  };
-  if (!serial_.rxCv.wait_for(lock, timeout, hasLine)) {
+  if (!waitForLine_(lock, Handshake::Clock::now() + timeout)) {
     return false;
   }
 
@@ -296,9 +293,9 @@ bool MobileRobotHardware::readLine_(std::string &line,
   return true;
 }
 
-void MobileRobotHardware::waitForLine_(Handshake::Clock::time_point deadline) {
-  std::unique_lock<std::mutex> lock(serial_.rxMutex);
-  serial_.rxCv.wait_until(lock, deadline, [this] {
+bool MobileRobotHardware::waitForLine_(std::unique_lock<std::mutex> &lock,
+                                       Handshake::Clock::time_point deadline) {
+  return serial_.rxCv.wait_until(lock, deadline, [this] {
     return serial_.rxBuffer.find('\n') != std::string::npos;
   });
 }
@@ -342,7 +339,8 @@ void MobileRobotHardware::awaitHandshake_() {
     serviceHandshake_();
     if (handshake_.state() == Handshake::State::PENDING) {
       // wake up for the esp32's reply, the next re-send or the deadline
-      waitForLine_(handshake_.nextEventAt());
+      std::unique_lock<std::mutex> lock(serial_.rxMutex);
+      waitForLine_(lock, handshake_.nextEventAt());
     }
   }
   if (handshake_.state() == Handshake::State::FAILED) {

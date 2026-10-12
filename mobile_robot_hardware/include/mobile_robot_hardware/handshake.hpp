@@ -41,17 +41,17 @@ public:
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                         now.time_since_epoch())
                         .count();
+    const uint32_t previousId = id_;
     id_ = static_cast<uint32_t>(ms);
-    if (id_ <= previousId_) {
+    if (id_ <= previousId) {
       // same millisecond or the 32 bit ms wrapped: keep counting up instead
-      id_ = previousId_ + 1;
+      id_ = previousId + 1;
     }
     // 0 is reserved as "no handshake" on the wire, only reached when the ids
     // wrap around UINT32_MAX
     if (id_ == 0) {
       id_ = 1;
     }
-    previousId_ = id_;
     state_ = State::PENDING;
     startedAt_ = now;
     nextSendAt_ = now;
@@ -137,7 +137,6 @@ private:
 
   State state_ = State::IDLE;
   uint32_t id_ = 0;
-  uint32_t previousId_ = 0;
   Clock::time_point startedAt_;
   Clock::time_point nextSendAt_;
   std::string failureReason_;

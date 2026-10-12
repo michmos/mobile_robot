@@ -177,7 +177,10 @@ private:
   bool readLine_(std::string &line, std::chrono::milliseconds timeout);
 
   // blocks until a complete line is buffered or `deadline` has passed
-  void waitForLine_(Handshake::Clock::time_point deadline);
+  // @param lock: holds serial_.rxMutex
+  // @return: true if a complete line is buffered
+  bool waitForLine_(std::unique_lock<std::mutex> &lock,
+                    Handshake::Clock::time_point deadline);
 
   // starts a handshake that sends `payload`
   void startHandshake_(const protocol::ConfigPayload &payload);
