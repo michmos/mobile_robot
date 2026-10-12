@@ -354,6 +354,11 @@ void MobileRobotHardware::startHandshake_(
 }
 
 void MobileRobotHardware::awaitHandshake_() {
+  // parameter changes up to here are part of the snapshot below, so read()
+  // must not start a second handshake for them. Cleared before taking the
+  // snapshot: a change in between is then both in it and flagged again,
+  // which only costs a redundant handshake instead of a lost change
+  configChanged_ = false;
   // not realtime, so the blocking get() is fine here
   startHandshake_(config_.get());
   while (handshake_.state() == Handshake::State::PENDING) {
