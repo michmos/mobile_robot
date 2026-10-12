@@ -1,0 +1,149 @@
+#include "mobile_robot_hardware/handshake.hpp"
+
+#include <gtest/gtest.h>
+
+#include <chrono>
+#include <cstdint>
+
+using mobile_robot_hardware::Handshake;
+using std::chrono::milliseconds;
+using State = Handshake::State;
+
+namespace {
+
+constexpr milliseconds k_retry{500};
+constexpr milliseconds k_timeout{10000};
+
+Handshake::Clock::time_point at(int64_t ms) {
+  return Handshake::Clock::time_point(milliseconds(ms));
+}
+
+class HandshakeTest : public ::testing::Test {
+protected:
+  Handshake hs{k_retry, k_timeout};
+};
+
+} // namespace
+
+TEST_F(HandshakeTest, IdleUntilStarted) {
+  EXPECT_EQ(hs.state(), State::IDLE);
+  EXPECT_EQ(hs.id(), 0u);
+  EXPECT_FALSE(hs.dueForSend(at(1000)));
+}
+
+TEST_F(HandshakeTest, StartIsPendingAndDueImmediately) {
+  const uint32_t id = hs.start(at(1000));
+  EXPECT_EQ(id, 1000u);
+  EXPECT_EQ(hs.id(), id);
+  EXPECT_EQ(hs.state(), State::PENDING);
+  EXPECT_TRUE(hs.dueForSend(at(1000)));
+}
+
+TEST_F(HandshakeTest, ResendsEveryRetryInterval) {
+  hs.start(at(1000));
+  ASSERT_TRUE(hs.dueForSend(at(1000)));
+  EXPECT_FALSE(hs.dueForSend(at(1000)));
+  EXPECT_FALSE(hs.dueForSend(at(1499)));
+  EXPECT_TRUE(hs.dueForSend(at(1500)));
+  EXPECT_FALSE(hs.dueForSend(at(1999)));
+  EXPECT_TRUE(hs.dueForSend(at(2000)));
+}
+
+TEST_F(HandshakeTest, FailsAfterTimeout) {
+  hs.start(at(1000));
+  EXPECT_TRUE(hs.dueForSend(at(10999)));
+  EXPECT_EQ(hs.state(), State::PENDING);
+
+  EXPECT_FALSE(hs.dueForSend(at(11000)));
+  EXPECT_EQ(hs.state(), State::FAILED);
+  EXPECT_NE(hs.failureReason().find("timed out"), std::string::npos);
+  EXPECT_FALSE(hs.dueForSend(at(20000)));
+}
+
+TEST_F(HandshakeTest, MatchingAckConfigures) {
+  const uint32_t id = hs.start(at(1000));
+  hs.onAck(id);
+  EXPECT_EQ(hs.state(), State::CONFIGURED);
+  EXPECT_FALSE(hs.dueForSend(at(1000)));
+  // no deadline once configured
+  EXPECT_FALSE(hs.dueForSend(at(100000)));
+  EXPECT_EQ(hs.state(), State::CONFIGURED);
+}
+
+TEST_F(HandshakeTest, MatchingNackFailsWithField) {
+  const uint32_t id = hs.start(at(1000));
+  hs.onNack(id, "kp");
+  EXPECT_EQ(hs.state(), State::FAILED);
+  EXPECT_NE(hs.failureReason().find("'kp'"), std::string::npos);
+}
+
+TEST_F(HandshakeTest, IgnoresRepliesWithStaleId) {
+  const uint32_t first = hs.start(at(1000));
+  const uint32_t second = hs.start(at(2000));
+  ASSERT_NE(first, second);
+
+  hs.onAck(first);
+  EXPECT_EQ(hs.state(), State::PENDING);
+  hs.onNack(first, "kp");
+  EXPECT_EQ(hs.state(), State::PENDING);
+
+  hs.onAck(second);
+  EXPECT_EQ(hs.state(), State::CONFIGURED);
+}
+
+TEST_F(HandshakeTest, IgnoresRepliesOutsidePending) {
+  const uint32_t id = hs.start(at(1000));
+  hs.onAck(id);
+  hs.onNack(id, "kp");
+  EXPECT_EQ(hs.state(), State::CONFIGURED);
+
+  // IDLE
+  Handshake idle{k_retry, k_timeout};
+  idle.onAck(0);
+  EXPECT_EQ(idle.state(), State::IDLE);
+}
+
+TEST_F(HandshakeTest, SetupWhileConfiguredStartsNewHandshake) {
+  const uint32_t first = hs.start(at(1000));
+  hs.onAck(first);
+
+  EXPECT_TRUE(hs.onSetup(at(5000)));
+  EXPECT_EQ(hs.state(), State::PENDING);
+  EXPECT_NE(hs.id(), first);
+  EXPECT_TRUE(hs.dueForSend(at(5000)));
+}
+
+TEST_F(HandshakeTest, SetupWhileFailedStartsNewHandshake) {
+  const uint32_t first = hs.start(at(1000));
+  hs.onNack(first, "kp");
+
+  EXPECT_TRUE(hs.onSetup(at(5000)));
+  EXPECT_EQ(hs.state(), State::PENDING);
+  EXPECT_TRUE(hs.failureReason().empty());
+}
+
+TEST_F(HandshakeTest, SetupWhilePendingKeepsHandshake) {
+  const uint32_t id = hs.start(at(1000));
+  EXPECT_FALSE(hs.onSetup(at(1100)));
+  EXPECT_EQ(hs.state(), State::PENDING);
+  EXPECT_EQ(hs.id(), id);
+}
+
+TEST_F(HandshakeTest, IdIsNeverZero) {
+  // ms since the clock epoch truncated to 32 bit is 0
+  EXPECT_EQ(hs.start(at(int64_t{1} << 32)), 1u);
+  EXPECT_NE(hs.start(at(0)), 0u);
+}
+
+TEST_F(HandshakeTest, RestartInSameMillisecondGetsNewId) {
+  const uint32_t first = hs.start(at(1000));
+  const uint32_t second = hs.start(at(1000));
+  EXPECT_NE(first, second);
+}
+
+TEST_F(HandshakeTest, IdBumpSkipsZeroOnWrap) {
+  const int64_t max = UINT32_MAX;
+  EXPECT_EQ(hs.start(at(max)), UINT32_MAX);
+  // same millisecond again: bumping UINT32_MAX must not give 0
+  EXPECT_EQ(hs.start(at(max)), 1u);
+}
