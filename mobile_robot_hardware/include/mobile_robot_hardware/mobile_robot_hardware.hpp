@@ -54,12 +54,15 @@ private:
   std::string serialPort_;
   uint32_t baudRate_ = 0;
 
-  // wraps payload and mutex for safe read, write operations
+  // wraps payload and mutex for safe read, write operations. Shared with the
+  // parameter callback thread, the realtime loop only uses tryGet()
   class Config {
   public:
     protocol::ConfigPayload get() const;
     void set(const protocol::ConfigPayload &newConfig);
-    std::string serialize(uint32_t handshakeId) const;
+    // non-blocking get for the realtime loop
+    // @return: false if the lock is held, `out` is left untouched then
+    bool tryGet(protocol::ConfigPayload &out) const;
 
   private:
     protocol::ConfigPayload payload_;
@@ -76,6 +79,11 @@ private:
   // only touched by on_configure() and the realtime loop, which never run
   // concurrently
   Handshake handshake_{k_config_retry_interval, k_handshake_timeout};
+
+  // snapshot of config_ taken when the running handshake started. Every
+  // re-send of one handshake carries the same values, so an ACK for its id
+  // means the esp32 runs exactly these. Same threads as handshake_
+  protocol::ConfigPayload handshakePayload_;
 
   // set by the parameter callback, which runs on another thread than read()
   std::atomic<bool> configChanged_{false};
@@ -169,11 +177,14 @@ private:
   // @param timeout: time to wait for '\n'
   bool readLine_(std::string &line, std::chrono::milliseconds timeout);
 
-  // starts a handshake and blocks until the esp32 acknowledged it
+  // starts a handshake that sends `payload`
+  void startHandshake_(const protocol::ConfigPayload &payload);
+
+  // starts a handshake with config_ and blocks until the esp32 acknowledged it
   // @throws std::runtime_error with the reason if the handshake failed
   void awaitHandshake_();
 
-  // sends config_ with the id of the running handshake
+  // sends handshakePayload_ with the id of the running handshake
   // errors are logged, the retry or the deadline of the handshake handle them
   void sendConfig_();
 

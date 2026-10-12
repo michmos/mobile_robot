@@ -228,10 +228,14 @@ void MobileRobotHardware::Config::set(
   payload_ = newConfig;
 }
 
-std::string
-MobileRobotHardware::Config::serialize(uint32_t handshakeId) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  return serializeConfig(payload_, handshakeId);
+bool MobileRobotHardware::Config::tryGet(
+    protocol::ConfigPayload &out) const {
+  std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    return false;
+  }
+  out = payload_;
+  return true;
 }
 
 void MobileRobotHardware::declareTunableParams_() {
@@ -325,7 +329,8 @@ bool MobileRobotHardware::readLine_(std::string &line,
 
 void MobileRobotHardware::sendConfig_() {
   try {
-    const std::string configLine = config_.serialize(handshake_.id());
+    const std::string configLine =
+        serializeConfig(handshakePayload_, handshake_.id());
     serial_.port->send(
         std::vector<uint8_t>(configLine.begin(), configLine.end()));
   } catch (const std::exception &e) {
@@ -342,8 +347,15 @@ void MobileRobotHardware::serviceHandshake_() {
   }
 }
 
-void MobileRobotHardware::awaitHandshake_() {
+void MobileRobotHardware::startHandshake_(
+    const protocol::ConfigPayload &payload) {
+  handshakePayload_ = payload;
   handshake_.start(Handshake::Clock::now());
+}
+
+void MobileRobotHardware::awaitHandshake_() {
+  // not realtime, so the blocking get() is fine here
+  startHandshake_(config_.get());
   while (handshake_.state() == Handshake::State::PENDING) {
     processNewLines_();
     serviceHandshake_();
@@ -592,7 +604,8 @@ void MobileRobotHardware::updateEncoderState_(const std::string &line) {
     return;
   }
 
-  const float ticksPerWheelRev = config_.get().ticks_per_wheel_rev;
+  // what the esp32 counts with, and no lock in the realtime loop
+  const float ticksPerWheelRev = handshakePayload_.ticks_per_wheel_rev;
 
   // update total ticks - delta required in cas of esp restart
   const int32_t leftDelta = leftTicks - ticks_.leftLast;
@@ -631,9 +644,15 @@ void MobileRobotHardware::updateEncoderState_(const std::string &line) {
 return_type MobileRobotHardware::read(const rclcpp::Time &,
                                       const rclcpp::Duration &) {
   if (configChanged_.exchange(false)) {
-    RCLCPP_INFO(this->get_logger(),
-                "Configuration changed, sending it to the esp32");
-    handshake_.start(Handshake::Clock::now());
+    protocol::ConfigPayload changed;
+    if (config_.tryGet(changed)) {
+      RCLCPP_INFO(this->get_logger(),
+                  "Configuration changed, sending it to the esp32");
+      startHandshake_(changed);
+    } else {
+      // the parameter callback holds the lock, try again next cycle
+      configChanged_ = true;
+    }
   }
 
   processNewLines_();

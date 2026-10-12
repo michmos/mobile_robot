@@ -116,8 +116,9 @@ public:
 //
 // sent by the pi in answer to every SETUP event and re-sent until the esp32
 // answers with an ACK or NACK carrying the same handshake_ts. All re-sends of
-// one handshake carry the same non-zero handshake_ts, a new handshake gets a
-// new one
+// one handshake carry the same non-zero handshake_ts and the same payload, a
+// new handshake (e.g. changed values) gets a new handshake_ts. So ACKing a
+// re-send of an already applied handshake_ts is correct
 //
 // the payload fields and their range check live in ConfigPayload.hpp, which the
 // pi shares, so both ends agree on what a valid configuration is
