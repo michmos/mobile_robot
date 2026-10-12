@@ -483,11 +483,18 @@ void MobileRobotHardware::handleHandshakeReply_(const std::string &line) {
   } else if (parseHandshakeReply(line, "S,NACK,", id, field)) {
     if (handshake_.onNack(id, field)) {
       RCLCPP_WARN(this->get_logger(),
-                  "esp32 on %s rejected configuration field '%s', retrying",
+                  "esp32 on %s rejected configuration (%s), retrying",
                   serialPort_.c_str(), field.c_str());
     }
+  } else {
+    // no valid handshake id, e.g. "S,NACK,malformed" from firmware that
+    // predates the handshake id. Without this the handshake would only end
+    // in an unexplained timeout
+    RCLCPP_WARN(this->get_logger(),
+                "Unexpected reply '%s' from esp32 on %s, is the esp32 "
+                "firmware up to date?",
+                line.c_str(), serialPort_.c_str());
   }
-  // anything else is not a reply to the running handshake
 }
 
 CallbackReturn

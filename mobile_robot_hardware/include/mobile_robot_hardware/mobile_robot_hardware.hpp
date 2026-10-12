@@ -202,7 +202,8 @@ private:
   // handshake unless one is running
   void handleSetup_();
 
-  // forwards an "S,ACK,..." or "S,NACK,..." line to the handshake
+  // forwards an "S,ACK,..." or "S,NACK,..." line to the handshake, warns
+  // about one without a valid handshake id
   void handleHandshakeReply_(const std::string &line);
 
   // handles all buffered lines (logs, SETUP, ACK, NACK, encoder reports). Of the encoder

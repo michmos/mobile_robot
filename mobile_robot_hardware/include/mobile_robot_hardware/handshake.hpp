@@ -56,7 +56,7 @@ public:
     startedAt_ = now;
     nextSendAt_ = now;
     failureReason_.clear();
-    lastNackField_.clear();
+    lastNackDetail_.clear();
     return id_;
   }
 
@@ -69,8 +69,8 @@ public:
     if (now - startedAt_ >= timeout_) {
       std::string reason =
           "timed out waiting for the esp32 to acknowledge the configuration";
-      if (!lastNackField_.empty()) {
-        reason += ", last NACK named field '" + lastNackField_ + "'";
+      if (!lastNackDetail_.empty()) {
+        reason += ", last NACK: '" + lastNackDetail_ + "'";
       }
       fail_(reason);
       return false;
@@ -101,17 +101,18 @@ public:
     }
   }
 
-  // the esp32 rejected handshake `id` because of `field`. The pi validates
-  // with the same check and serializes losslessly, so a NACK means the line
-  // got corrupted on the way: the handshake stays PENDING and the config is
-  // re-sent on the retry interval until an ACK or the deadline. Replies to
-  // other handshakes and replies outside PENDING are ignored
+  // the esp32 rejected handshake `id`, `detail` names the offending field or
+  // "checksum"/"malformed". The pi validates with the same check and
+  // serializes losslessly, so a NACK means the line got corrupted on the way:
+  // the handshake stays PENDING and the config is re-sent on the retry
+  // interval until an ACK or the deadline. Replies to other handshakes and
+  // replies outside PENDING are ignored
   // @return: true if the NACK belonged to the running handshake
-  bool onNack(uint32_t id, const std::string &field) {
+  bool onNack(uint32_t id, const std::string &detail) {
     if (state_ != State::PENDING || id != id_) {
       return false;
     }
-    lastNackField_ = field;
+    lastNackDetail_ = detail;
     return true;
   }
 
@@ -140,7 +141,7 @@ private:
   Clock::time_point startedAt_;
   Clock::time_point nextSendAt_;
   std::string failureReason_;
-  std::string lastNackField_;
+  std::string lastNackDetail_;
 };
 
 } // namespace mobile_robot_hardware
