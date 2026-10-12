@@ -155,6 +155,23 @@ TEST_F(HandshakeTest, RestartInSameMillisecondGetsNewId) {
   EXPECT_NE(first, second);
 }
 
+// only avoiding the previous id gave 1000, 1001, 1000
+TEST_F(HandshakeTest, IdsNeverRepeatWithinOneMillisecond) {
+  EXPECT_EQ(hs.start(at(1000)), 1000u);
+  EXPECT_EQ(hs.start(at(1000)), 1001u);
+  EXPECT_EQ(hs.start(at(1000)), 1002u);
+  // the clock catching up again doesn't reuse an id either
+  EXPECT_EQ(hs.start(at(1001)), 1003u);
+  EXPECT_EQ(hs.start(at(5000)), 5000u);
+}
+
+TEST_F(HandshakeTest, IdsKeepIncreasingWhenMillisecondsWrap) {
+  const int64_t wrap = int64_t{1} << 32;
+  EXPECT_EQ(hs.start(at(wrap - 10)), UINT32_MAX - 9);
+  // truncated to 32 bit the time jumps back to 5
+  EXPECT_EQ(hs.start(at(wrap + 5)), UINT32_MAX - 8);
+}
+
 TEST_F(HandshakeTest, IdBumpSkipsZeroOnWrap) {
   const int64_t max = UINT32_MAX;
   EXPECT_EQ(hs.start(at(max)), UINT32_MAX);
