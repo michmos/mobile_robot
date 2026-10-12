@@ -12,9 +12,9 @@
 
 namespace mobile_robot_hardware {
 
-// C,<handshake_id>,<kp>,...,<invert_right>\n
+// C,<handshake_id>,<kp>,...,<invert_right>,<crc>\n
 // floats are written with enough digits that the esp32 parses back exactly
-// the value the pi validated
+// the value the pi validated, <crc> lets it detect a corrupted line
 std::string serializeConfig(const protocol::ConfigPayload &payload,
                             uint32_t handshakeId);
 

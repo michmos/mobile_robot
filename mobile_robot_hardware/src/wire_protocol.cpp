@@ -1,5 +1,8 @@
 #include "mobile_robot_hardware/wire_protocol.hpp"
 
+// shared with the firmware, the include path points at esp32_firmware/
+#include "inc/Crc16.hpp"
+
 #include <cstdio>
 #include <limits>
 
@@ -22,19 +25,26 @@ std::string formatFloat(float value) {
 std::string serializeConfig(const protocol::ConfigPayload &payload,
                             uint32_t handshakeId) {
   // invert_left/invert_right must go out as 0/1, not as true/false
-  return "C," + std::to_string(handshakeId) + "," + formatFloat(payload.kp) +
-         "," + formatFloat(payload.ki) + "," +
-         formatFloat(payload.integral_limit) + "," +
-         formatFloat(payload.slope_left) + "," +
-         formatFloat(payload.slope_right) + "," +
-         formatFloat(payload.min_duty_left) + "," +
-         formatFloat(payload.min_duty_right) + "," +
-         formatFloat(payload.ticks_per_wheel_rev) + "," +
-         std::to_string(payload.watchdog_timeout_ms) + "," +
-         std::to_string(payload.control_rate_hz) + "," +
-         std::to_string(payload.report_rate_hz) + "," +
-         std::string(payload.invert_left ? "1" : "0") + "," +
-         std::string(payload.invert_right ? "1" : "0") + "\n";
+  const std::string body =
+      "C," + std::to_string(handshakeId) + "," + formatFloat(payload.kp) +
+      "," + formatFloat(payload.ki) + "," +
+      formatFloat(payload.integral_limit) + "," +
+      formatFloat(payload.slope_left) + "," +
+      formatFloat(payload.slope_right) + "," +
+      formatFloat(payload.min_duty_left) + "," +
+      formatFloat(payload.min_duty_right) + "," +
+      formatFloat(payload.ticks_per_wheel_rev) + "," +
+      std::to_string(payload.watchdog_timeout_ms) + "," +
+      std::to_string(payload.control_rate_hz) + "," +
+      std::to_string(payload.report_rate_hz) + "," +
+      std::string(payload.invert_left ? "1" : "0") + "," +
+      std::string(payload.invert_right ? "1" : "0");
+
+  // lets the esp32 tell a corrupted line from the one the pi validated
+  char crc[8];
+  std::snprintf(crc, sizeof(crc), "%04X",
+                protocol::crc16(body.c_str(), body.size()));
+  return body + "," + crc + "\n";
 }
 
 bool parseHandshakeReply(const std::string &line, const std::string &prefix,

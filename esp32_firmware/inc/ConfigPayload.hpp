@@ -8,7 +8,8 @@
 //
 // Shared by both ends of the serial link: pi and esp32
 // the check needs to run on the pi to ensure sanity of the values
-// and on the esp32 to make sure the values arrived without any noise
+// and on the esp32 as a last line of defence (noise on the link is caught by
+// the CRC in Crc16.hpp first)
 // Keeping the check in one place means the pi cannot accept a
 // configuration the esp32 would reject.
 

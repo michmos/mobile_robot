@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
+#include <cstdio>
 #include <cstdint>
 #include <string>
 
@@ -115,6 +117,20 @@ void expectSamePayload(const protocol::ConfigPayload &a,
   EXPECT_EQ(a.invert_right, b.invert_right);
 }
 
+// the config line without its ",<crc>" suffix
+std::string bodyOf(const std::string &line) {
+  const std::string stripped = stripNewline(line);
+  return stripped.substr(0, stripped.rfind(','));
+}
+
+// appends the checksum the pi would send for `body`
+std::string sign(const std::string &body) {
+  char crc[8];
+  std::snprintf(crc, sizeof(crc), "%04X",
+                protocol::crc16(body.c_str(), body.size()));
+  return body + "," + crc;
+}
+
 // a valid payload with every field off its default
 protocol::ConfigPayload samplePayload() {
   protocol::ConfigPayload p;
@@ -136,14 +152,22 @@ protocol::ConfigPayload samplePayload() {
 
 } // namespace
 
+TEST(Crc16, CheckValue) {
+  // the published check value of CRC-16/CCITT-FALSE
+  EXPECT_EQ(protocol::crc16("123456789", 9), 0x29B1);
+  EXPECT_EQ(protocol::crc16("", 0), 0xFFFF);
+}
+
 TEST(SerializeConfig, Format) {
   const std::string line = serializeConfig(samplePayload(), 123);
   EXPECT_EQ(line.rfind("C,123,", 0), 0u) << line;
   ASSERT_FALSE(line.empty());
   EXPECT_EQ(line.back(), '\n');
-  EXPECT_EQ(std::count(line.begin(), line.end(), ','), 14) << line;
-  // booleans as 0/1
-  EXPECT_NE(line.find(",1,0\n"), std::string::npos) << line;
+  EXPECT_EQ(std::count(line.begin(), line.end(), ','), 15) << line;
+  // booleans as 0/1, then the checksum
+  EXPECT_NE(line.find(",1,0,"), std::string::npos) << line;
+  // CRC as 4 uppercase hex digits over everything before its comma
+  EXPECT_EQ(stripNewline(line), sign(bodyOf(line))) << line;
 }
 
 TEST(SerializeConfig, RoundTripThroughFirmwareParser) {
@@ -182,25 +206,27 @@ TEST(SerializeConfig, RoundTripKeepsValuesNearLimits) {
   expectSamePayload(sent, received);
 }
 
+// lines with a correct checksum but broken content
 TEST(FirmwareConfigParser, RejectsMalformedLines) {
   const std::string valid = stripNewline(serializeConfig(samplePayload(), 9));
   msgs::Config c;
   ASSERT_EQ(c.init(valid), 0);
 
-  const std::string body = valid.substr(valid.find(',', 2)); // after the id
-  const std::string withoutLastField = valid.substr(0, valid.rfind(','));
+  const std::string body = bodyOf(valid);
+  const std::string afterId = body.substr(body.find(',', 2));
+  const std::string withoutLastField = body.substr(0, body.rfind(','));
 
   for (const std::string &line : {
-           std::string("C"),
-           std::string("C,9"),
-           std::string("X") + valid.substr(1), // wrong message type
-           std::string("C,0") + body,          // id 0 is reserved
-           std::string("C,-1") + body,
-           std::string("C,abc") + body,
-           std::string("C,4294967296") + body, // id above UINT32_MAX
-           withoutLastField,                   // missing field
-           valid + ",1",                       // extra field
-           valid.substr(0, valid.size() - 1) + "2", // invert_right not 0/1
+           sign("C"),
+           sign("C,9"),
+           sign("X" + body.substr(1)),          // wrong message type
+           sign("C,0" + afterId),               // id 0 is reserved
+           sign("C,-1" + afterId),
+           sign("C,abc" + afterId),
+           sign("C,4294967296" + afterId),      // id above UINT32_MAX
+           sign(withoutLastField),              // missing field
+           sign(body + ",1"),                   // extra field
+           sign(body.substr(0, body.size() - 1) + "2"), // invert_right not 0/1
        }) {
     msgs::Config parsed;
     EXPECT_EQ(parsed.init(line), -1) << line;
@@ -217,4 +243,47 @@ TEST(FirmwareConfigParser, NamesOutOfRangeFieldButKeepsId) {
   EXPECT_STREQ(c.lastError(), "slope_left");
   // the NACK names the handshake even though the config was rejected
   EXPECT_EQ(c.handshake_id, 55u);
+}
+
+// a line damaged on the serial link must not be applied and ACKed
+TEST(FirmwareConfigParser, RejectsCorruptedLines) {
+  const std::string valid = stripNewline(serializeConfig(samplePayload(), 77));
+  ASSERT_EQ(valid.rfind("C,77,0.349999994,", 0), 0u) << valid;
+
+  std::string flippedDigit = valid;
+  flippedDigit[8] = '8'; // kp 0.349999994 -> 0.389999994, still in range
+  std::string droppedChar = valid;
+  droppedChar.erase(9, 1);
+  std::string badCrc = valid;
+  badCrc.back() = badCrc.back() == '0' ? '1' : '0';
+
+  for (const std::string &line : {
+           flippedDigit,
+           droppedChar,
+           badCrc,
+           std::string("C"),                      // no checksum at all
+           bodyOf(valid),                         // checksum missing
+           bodyOf(valid) + ",12",                 // too short
+           bodyOf(valid) + ",+12F",               // not hex
+           bodyOf(valid) + "," + valid.substr(valid.size() - 4) + "0",
+       }) {
+    msgs::Config parsed;
+    EXPECT_EQ(parsed.init(line), -1) << line;
+    EXPECT_FALSE(parsed.initialized) << line;
+    EXPECT_STREQ(parsed.lastError(), "checksum") << line;
+  }
+
+  // the NACK still names the handshake, unless the id itself was hit
+  msgs::Config parsed;
+  parsed.init(flippedDigit);
+  EXPECT_EQ(parsed.handshake_id, 77u);
+}
+
+TEST(FirmwareConfigParser, AcceptsLowercaseChecksum) {
+  std::string line = stripNewline(serializeConfig(samplePayload(), 3));
+  for (size_t i = line.rfind(',') + 1; i < line.size(); ++i) {
+    line[i] = static_cast<char>(std::tolower(line[i]));
+  }
+  msgs::Config parsed;
+  EXPECT_EQ(parsed.init(line), 0) << line << ": " << parsed.lastError();
 }

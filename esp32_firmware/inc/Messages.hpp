@@ -2,7 +2,9 @@
 #define MESSAGES_HPP
 
 #include "ConfigPayload.hpp"
+#include "Crc16.hpp"
 #include <Arduino.h>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -112,7 +114,11 @@ public:
 // C,<handshake_id>,<kp>,<ki>,<integral_limit>,<slope_left>,<slope_right>,
 //   <min_duty_left>,<min_duty_right>,<ticks_per_wheel_rev>,
 //   <watchdog_timeout_ms>,<control_rate_hz>,<report_rate_hz>,
-//   <invert_left>,<invert_right>\n
+//   <invert_left>,<invert_right>,<crc>\n
+//
+// <crc> is the CRC-16 (Crc16.hpp) of everything before its comma, as 4
+// uppercase hex digits. A config that passes it is exactly what the pi sent,
+// so an ACK means the esp32 runs the pi's values
 //
 // the pi starts a handshake when it configures, when a SETUP arrives while no
 // handshake is running, and when parameters change. It re-sends the config
@@ -133,7 +139,11 @@ public:
   Config() : initialized(false), handshake_id(0), lastError_(NULL) {}
 
   int init(const std::string &line) override {
-    std::string copy = line;
+    // the checksum covers everything before the last comma
+    const size_t crcSep = line.rfind(',');
+    const bool crcOk = checksumOk_(line, crcSep);
+    std::string copy =
+        crcSep == std::string::npos ? line : line.substr(0, crcSep);
 
     const char *id = strtok(&copy[0], ",");
     if (!id || strlen(id) != 1 || id[0] != 'C') {
@@ -144,6 +154,10 @@ public:
     bool errFlag = false;
     // parsed first so a NACK can name the handshake even if the rest is bad
     handshake_id = parseUInt32_(strtok(NULL, ","), &errFlag);
+    if (!crcOk) {
+      lastError_ = k_checksum;
+      return -1;
+    }
     protocol::ConfigPayload parsed;
     parsed.kp = parseFloat_(strtok(NULL, ","), &errFlag);
     parsed.ki = parseFloat_(strtok(NULL, ","), &errFlag);
@@ -184,6 +198,27 @@ public:
 
 private:
   static constexpr const char *k_malformed = "malformed";
+  static constexpr const char *k_checksum = "checksum";
+
+  // @param sep: position of the comma before the checksum
+  // @return: true if the 4 hex digits after sep match the CRC of line[0, sep)
+  static bool checksumOk_(const std::string &line, size_t sep) {
+    if (sep == std::string::npos || line.size() - sep - 1 != 4) {
+      return false;
+    }
+    uint16_t received = 0;
+    for (size_t i = sep + 1; i < line.size(); ++i) {
+      const char c = line[i];
+      if (!isxdigit(static_cast<unsigned char>(c))) {
+        return false;
+      }
+      received = static_cast<uint16_t>(
+          (received << 4) |
+          (isdigit(static_cast<unsigned char>(c)) ? c - '0'
+                                                   : (toupper(c) - 'A' + 10)));
+    }
+    return received == protocol::crc16(line.c_str(), sep);
+  }
 
   const char *lastError_;
 };
