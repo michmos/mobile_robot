@@ -9,3 +9,9 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin.
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`.
+
+## Serial protocol (pi ↔ ESP32)
+- Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
+- **Firmware and hardware plugin must always be updated together**, the two sides reject each other's lines after a wire format change.
+- Configuration handshake: the ESP32 sends `S,SETUP` every 500 ms until configured. The pi sends `C,<handshake_id>,...,<crc>` every 500 ms until it gets the matching `S,ACK,<handshake_id>` (a `S,NACK,...` is retried), and gives up after 10 s. Each handshake has a new, increasing id and a fixed payload. State machine: `mobile_robot_hardware/include/mobile_robot_hardware/handshake.hpp`.
+- A handshake runs on `on_configure`, when the ESP32 restarts (SETUP while configured) and on a live parameter change. Until it is acked, `write()` sends zero velocity. A handshake that fails while active makes `read()` return `ERROR`: controller_manager deactivates the component and its controllers, and the process keeps running (no systemd restart).
