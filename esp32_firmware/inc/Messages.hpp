@@ -285,9 +285,12 @@ class Event : public ASendMessage {
 public:
   enum e_event_type {
     SETUP, // unconfigured, sent as a beacon until a configuration is applied
-    ACK,   // configuration with the handshake_id in detail is applied
+    ACK,   // configuration with the handshake_id in detail passed the CRC and
+           // range check. Sent on parse, updateConfig() applies it in the
+           // same loop() pass (or skips it if it already runs)
     NACK,  // configuration with the handshake_id in detail was rejected, the
-           // field after it names the offending field
+           // detail after it names the offending field, or "checksum" /
+           // "malformed"
   } e;
 
   Event(e_event_type e) : e(e), detail_() {}
