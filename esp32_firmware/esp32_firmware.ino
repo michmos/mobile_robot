@@ -177,10 +177,17 @@ bool updateConfig() {
   return true;
 }
 
-// sends SETUP repeatedly until a valid configuration is received and applied
+// sends SETUP every k_setup_interval_ms until a valid configuration is
+// received and applied, the serial port is read in between
 void awaitConfig() {
+  // the pi re-sends the config on its own, SETUP only has to reach it once
+  const unsigned long k_setup_interval_ms = 500;
+  unsigned long last_setup_ms = millis() - k_setup_interval_ms; // send now
   do {
-    g_sc.writeln(msgs::Event(msgs::Event::SETUP));
+    if (millis() - last_setup_ms >= k_setup_interval_ms) {
+      g_sc.writeln(msgs::Event(msgs::Event::SETUP));
+      last_setup_ms = millis();
+    }
     g_sc.read();
     delay(10);
   } while (!updateConfig());
