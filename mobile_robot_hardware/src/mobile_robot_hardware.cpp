@@ -437,12 +437,10 @@ MobileRobotHardware::on_activate(const rclcpp_lifecycle::State &) {
     return CallbackReturn::ERROR;
   }
 
-  // clear buffer so the first velocity sample in read() isn't computed against
-  // a stale timestamp
-  {
-    std::lock_guard<std::mutex> lock(serial_.rxMutex);
-    serial_.rxBuffer.clear();
-  }
+  // the first encoder sample after activation only sets the baseline, so no
+  // velocity is computed against a stale timestamp. The receive buffer is
+  // kept: read() also runs while inactive, and it may hold the ACK of a
+  // handshake started then
   ticks_ = Ticks{};
   lastSampleTimeUs_ = 0;
   hasEncoderBaseline_ = false;
