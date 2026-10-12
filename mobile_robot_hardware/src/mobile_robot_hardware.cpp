@@ -499,7 +499,11 @@ void MobileRobotHardware::handleHandshakeReply_(const std::string &line) {
                   serialPort_.c_str());
     }
   } else if (parseHandshakeReply(line, "S,NACK,", id, field)) {
-    handshake_.onNack(id, field);
+    if (handshake_.onNack(id, field)) {
+      RCLCPP_WARN(this->get_logger(),
+                  "esp32 on %s rejected configuration field '%s', retrying",
+                  serialPort_.c_str(), field.c_str());
+    }
   }
   // anything else is not a reply to the running handshake
 }

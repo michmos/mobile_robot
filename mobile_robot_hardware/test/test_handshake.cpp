@@ -70,11 +70,36 @@ TEST_F(HandshakeTest, MatchingAckConfigures) {
   EXPECT_EQ(hs.state(), State::CONFIGURED);
 }
 
-TEST_F(HandshakeTest, MatchingNackFailsWithField) {
+// a NACK can only mean a corrupted line, so it is retried, not final
+TEST_F(HandshakeTest, MatchingNackKeepsRetrying) {
   const uint32_t id = hs.start(at(1000));
-  hs.onNack(id, "kp");
+  ASSERT_TRUE(hs.dueForSend(at(1000)));
+
+  EXPECT_TRUE(hs.onNack(id, "kp"));
+  EXPECT_EQ(hs.state(), State::PENDING);
+  EXPECT_EQ(hs.id(), id);
+  // on the normal retry interval, not immediately
+  EXPECT_FALSE(hs.dueForSend(at(1100)));
+  EXPECT_TRUE(hs.dueForSend(at(1500)));
+
+  hs.onAck(id);
+  EXPECT_EQ(hs.state(), State::CONFIGURED);
+}
+
+TEST_F(HandshakeTest, TimeoutAfterNackNamesField) {
+  const uint32_t id = hs.start(at(1000));
+  hs.onNack(id, "slope_left");
+  EXPECT_FALSE(hs.dueForSend(at(11000)));
   EXPECT_EQ(hs.state(), State::FAILED);
-  EXPECT_NE(hs.failureReason().find("'kp'"), std::string::npos);
+  EXPECT_NE(hs.failureReason().find("timed out"), std::string::npos);
+  EXPECT_NE(hs.failureReason().find("'slope_left'"), std::string::npos);
+}
+
+TEST_F(HandshakeTest, NewHandshakeForgetsOldNack) {
+  hs.onNack(hs.start(at(1000)), "kp");
+  hs.start(at(2000));
+  EXPECT_FALSE(hs.dueForSend(at(12000)));
+  EXPECT_EQ(hs.failureReason().find("kp"), std::string::npos);
 }
 
 TEST_F(HandshakeTest, IgnoresRepliesWithStaleId) {
@@ -84,7 +109,7 @@ TEST_F(HandshakeTest, IgnoresRepliesWithStaleId) {
 
   hs.onAck(first);
   EXPECT_EQ(hs.state(), State::PENDING);
-  hs.onNack(first, "kp");
+  EXPECT_FALSE(hs.onNack(first, "kp"));
   EXPECT_EQ(hs.state(), State::PENDING);
 
   hs.onAck(second);
@@ -94,7 +119,7 @@ TEST_F(HandshakeTest, IgnoresRepliesWithStaleId) {
 TEST_F(HandshakeTest, IgnoresRepliesOutsidePending) {
   const uint32_t id = hs.start(at(1000));
   hs.onAck(id);
-  hs.onNack(id, "kp");
+  EXPECT_FALSE(hs.onNack(id, "kp"));
   EXPECT_EQ(hs.state(), State::CONFIGURED);
 
   // IDLE
@@ -114,8 +139,9 @@ TEST_F(HandshakeTest, SetupWhileConfiguredStartsNewHandshake) {
 }
 
 TEST_F(HandshakeTest, SetupWhileFailedStartsNewHandshake) {
-  const uint32_t first = hs.start(at(1000));
-  hs.onNack(first, "kp");
+  hs.start(at(1000));
+  ASSERT_FALSE(hs.dueForSend(at(11000)));
+  ASSERT_EQ(hs.state(), State::FAILED);
 
   EXPECT_TRUE(hs.onSetup(at(5000)));
   EXPECT_EQ(hs.state(), State::PENDING);

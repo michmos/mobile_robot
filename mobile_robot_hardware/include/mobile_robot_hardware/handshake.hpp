@@ -24,7 +24,7 @@ public:
     IDLE,       // nothing started yet
     PENDING,    // config is (re-)sent until the esp32 replies
     CONFIGURED, // matching ACK received
-    FAILED,     // matching NACK received or deadline passed
+    FAILED,     // deadline passed without a matching ACK
   };
 
   Handshake(std::chrono::milliseconds retryInterval,
@@ -54,6 +54,7 @@ public:
     startedAt_ = now;
     nextSendAt_ = now;
     failureReason_.clear();
+    lastNackField_.clear();
     return id_;
   }
 
@@ -64,7 +65,12 @@ public:
       return false;
     }
     if (now - startedAt_ >= timeout_) {
-      fail_("timed out waiting for the esp32 to acknowledge the configuration");
+      std::string reason =
+          "timed out waiting for the esp32 to acknowledge the configuration";
+      if (!lastNackField_.empty()) {
+        reason += ", last NACK named field '" + lastNackField_ + "'";
+      }
+      fail_(reason);
       return false;
     }
     if (now < nextSendAt_) {
@@ -93,12 +99,18 @@ public:
     }
   }
 
-  // the esp32 rejected handshake `id` because of `field`. Replies to other
-  // handshakes and replies outside PENDING are ignored
-  void onNack(uint32_t id, const std::string &field) {
-    if (state_ == State::PENDING && id == id_) {
-      fail_("esp32 rejected configuration field '" + field + "'");
+  // the esp32 rejected handshake `id` because of `field`. The pi validates
+  // with the same check and serializes losslessly, so a NACK means the line
+  // got corrupted on the way: the handshake stays PENDING and the config is
+  // re-sent on the retry interval until an ACK or the deadline. Replies to
+  // other handshakes and replies outside PENDING are ignored
+  // @return: true if the NACK belonged to the running handshake
+  bool onNack(uint32_t id, const std::string &field) {
+    if (state_ != State::PENDING || id != id_) {
+      return false;
     }
+    lastNackField_ = field;
+    return true;
   }
 
   State state() const { return state_; }
@@ -120,6 +132,7 @@ private:
   Clock::time_point startedAt_;
   Clock::time_point nextSendAt_;
   std::string failureReason_;
+  std::string lastNackField_;
 };
 
 } // namespace mobile_robot_hardware
