@@ -17,6 +17,7 @@ std::string serializeConfig(const protocol::ConfigPayload &payload,
                             uint32_t handshakeId);
 
 // splits a handshake reply "<prefix><handshake id>[,<rest>]"
+// the id has to be plain decimal digits and fit into uint32_t
 // @return: false if the line has another prefix or no valid id
 bool parseHandshakeReply(const std::string &line, const std::string &prefix,
                          uint32_t &id, std::string &rest);

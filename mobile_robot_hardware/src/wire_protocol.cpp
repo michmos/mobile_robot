@@ -1,6 +1,6 @@
 #include "mobile_robot_hardware/wire_protocol.hpp"
 
-#include <exception>
+#include <limits>
 
 namespace mobile_robot_hardware {
 
@@ -32,15 +32,22 @@ bool parseHandshakeReply(const std::string &line, const std::string &prefix,
       line.substr(prefix.size(), comma == std::string::npos
                                      ? std::string::npos
                                      : comma - prefix.size());
-  try {
-    size_t used = 0;
-    id = static_cast<uint32_t>(std::stoul(idStr, &used));
-    if (used != idStr.size()) {
-      return false;
-    }
-  } catch (const std::exception &) {
+  // std::stoul would accept a sign or leading whitespace and values that
+  // alias a smaller id once cast to uint32_t
+  if (idStr.empty()) {
     return false;
   }
+  uint64_t value = 0;
+  for (const char c : idStr) {
+    if (c < '0' || c > '9') {
+      return false;
+    }
+    value = value * 10 + static_cast<uint64_t>(c - '0');
+    if (value > std::numeric_limits<uint32_t>::max()) {
+      return false;
+    }
+  }
+  id = static_cast<uint32_t>(value);
   rest = comma == std::string::npos ? "" : line.substr(comma + 1);
   return true;
 }

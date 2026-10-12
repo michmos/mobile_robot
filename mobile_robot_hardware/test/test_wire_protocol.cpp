@@ -55,3 +55,28 @@ TEST(ParseHandshakeReply, RejectsMissingOrMalformedId) {
   EXPECT_FALSE(parses("S,ACK,12x", "S,ACK,"));
   EXPECT_FALSE(parses("S,ACK,1.5", "S,ACK,"));
 }
+
+TEST(ParseHandshakeReply, RejectsSignAndWhitespace) {
+  EXPECT_FALSE(parses("S,ACK,-1", "S,ACK,"));
+  EXPECT_FALSE(parses("S,ACK,+1", "S,ACK,"));
+  EXPECT_FALSE(parses("S,ACK, 1", "S,ACK,"));
+  EXPECT_FALSE(parses("S,ACK,1 ", "S,ACK,"));
+}
+
+TEST(ParseHandshakeReply, RangeIsUint32) {
+  uint32_t id = 0;
+  ASSERT_TRUE(parses("S,ACK,4294967295", "S,ACK,", &id));
+  EXPECT_EQ(id, 4294967295u);
+
+  // would alias id 0 and 1 after a cast to uint32_t
+  EXPECT_FALSE(parses("S,ACK,4294967296", "S,ACK,"));
+  EXPECT_FALSE(parses("S,ACK,4294967297", "S,ACK,"));
+  EXPECT_FALSE(parses("S,NACK,18446744073709551617,kp", "S,NACK,"));
+  EXPECT_FALSE(parses("S,ACK,99999999999999999999999", "S,ACK,"));
+}
+
+TEST(ParseHandshakeReply, AcceptsLeadingZeros) {
+  uint32_t id = 0;
+  ASSERT_TRUE(parses("S,ACK,007", "S,ACK,", &id));
+  EXPECT_EQ(id, 7u);
+}
