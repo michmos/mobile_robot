@@ -4,9 +4,8 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import Shutdown
 from launch_ros.actions import Node
-import xacro
-
 from mobile_robot.urdf_kinematics import write_kinematics_params
+import xacro
 
 
 def generate_launch_description():
