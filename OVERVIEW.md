@@ -9,6 +9,7 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin.
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`.
+- **`lint/`** — linter setup shared by the three packages' `colcon test` (`lint.cmake`): C++ style via `ament_clang_format` with the repo's `.clang-format` instead of uncrustify, and xmllint validating `package.xml` against a local schema copy so no network is needed.
 
 ## Launch arguments (`mobile_robot_launch.py`)
 The defaults are the robot setup; a dev machine (no ESP32, lidar or foxglove) runs
