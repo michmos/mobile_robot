@@ -70,6 +70,20 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_ros REQUIRED)
+  find_package(lifecycle_msgs REQUIRED)
+
+  # creates ROS nodes and publishes on /cmd_vel: the isolated variant gives
+  # the test its own ROS domain limited to localhost, so a robot on the same
+  # network can never receive the commands
+  ament_add_ros_isolated_gtest(test_cmd_vel_timeout
+    test/test_cmd_vel_timeout.cpp
+  )
+  target_link_libraries(test_cmd_vel_timeout
+    ${PROJECT_NAME}
+    ${lifecycle_msgs_TARGETS}
+  )
 endif()
 
 ament_package()
