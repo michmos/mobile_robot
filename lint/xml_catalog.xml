@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- Maps the ROS package.xml schema to the local copy in schema/, so
+     xmllint validates package.xml without downloading it (tests run without
+     network). Used through XML_CATALOG_FILES, see lint.cmake -->
+<catalog xmlns="urn:oasis:names:tc:entity:xmlns:xml:catalog">
+  <rewriteURI uriStartString="http://download.ros.org/schema/" rewritePrefix="schema/"/>
+  <rewriteSystem systemIdStartString="http://download.ros.org/schema/" rewritePrefix="schema/"/>
+</catalog>
