@@ -311,12 +311,9 @@ TEST(SerializeMotorCmd, RoundTripThroughFirmwareParser) {
 // rejected like any other malformed command, not drive the wheel (#22)
 TEST(FirmwareMotorCmdParser, RejectsNonFiniteVelocities) {
   for (const std::string &line : {
-           std::string("M,nan,0"),
-           std::string("M,0,nan"),
-           std::string("M,NAN,0"),
-           std::string("M,-nan,0"),
-           std::string("M,inf,0"),
-           std::string("M,0,-inf"),
+           std::string("M,nan,0"), std::string("M,0,nan"),
+           std::string("M,NAN,0"), std::string("M,-nan,0"),
+           std::string("M,inf,0"), std::string("M,0,-inf"),
            std::string("M,infinity,0"),
            std::string("M,1e39,0"), // overflows float to inf
        }) {
