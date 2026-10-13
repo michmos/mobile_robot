@@ -1,0 +1,51 @@
+# Builds docker/Dockerfile.ros2 and pushes it as ghcr.io/michmos/mobile_robot_ci:kilted,
+# the image every job in ci.yml runs in. It runs only when the Dockerfile (or
+# this file) changes on `dev`, or by hand. No scheduled rebuilds.
+# ci.yml can't pass before this has run once: run it by hand with
+# `gh workflow run image.yml --ref dev` (the push that brings it to `dev` should
+# also start it through the paths filter).
+name: CI image
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - docker/Dockerfile.ros2
+      - .github/workflows/image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ci-image
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/michmos/mobile_robot_ci
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `pull: true` so every build starts from the current ros:kilted-ros-base.
+      # The sha tag keeps older images around to roll back to.
+      - uses: docker/build-push-action@v6
+        with:
+          context: docker
+          file: docker/Dockerfile.ros2
+          pull: true
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:kilted
+            ${{ env.IMAGE }}:kilted-${{ github.sha }}
