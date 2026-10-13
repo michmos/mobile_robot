@@ -10,6 +10,7 @@
 #include <hardware_interface/hardware_info.hpp>
 #include <hardware_interface/lexical_casts.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -51,11 +52,16 @@ T parseParam(const std::unordered_map<std::string, std::string> &params,
       return hardware_interface::parse_bool(it->second);
     } else {
       const double value = hardware_interface::stod(it->second);
-      // check range for integral types (don't check for floats)
+      // stod() only guarantees a finite double, which can still be out of
+      // range for T: a float would become inf, an integer is UB
+      if (value < static_cast<double>(std::numeric_limits<T>::lowest()) ||
+          value > static_cast<double>(std::numeric_limits<T>::max())) {
+        throw std::out_of_range("out of range for its type");
+      }
+      // the cast would truncate silently, e.g. 200.5 Hz to 200 Hz
       if constexpr (std::is_integral_v<T>) {
-        if (value < static_cast<double>(std::numeric_limits<T>::min()) ||
-            value > static_cast<double>(std::numeric_limits<T>::max())) {
-          throw std::out_of_range("out of range for its type");
+        if (std::trunc(value) != value) {
+          throw std::invalid_argument("not an integer");
         }
       }
       return static_cast<T>(value);
