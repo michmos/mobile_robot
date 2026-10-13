@@ -6,8 +6,7 @@
 
 namespace mobile_robot_controller {
 
-std::pair<double, double> inverseKinematics(double linearVel,
-                                            double angularVel,
+std::pair<double, double> inverseKinematics(double linearVel, double angularVel,
                                             double wheelSeparation,
                                             double wheelRadius) {
   // velocity difference rule for rigid bodies
@@ -56,10 +55,10 @@ geometry_msgs::msg::Quaternion yawToQuaternion(double yaw) {
   return msg;
 }
 
-void setDiagonalCovariance(std::array<double, 36> &covariance,
-                           double xVariance, double yVariance,
-                           double zVariance, double rollVariance,
-                           double pitchVariance, double yawVariance) {
+void setDiagonalCovariance(std::array<double, 36> &covariance, double xVariance,
+                           double yVariance, double zVariance,
+                           double rollVariance, double pitchVariance,
+                           double yawVariance) {
   // ! one dimenstional array !
   covariance[0] = xVariance;      // (0, 0)
   covariance[7] = yVariance;      // (1, 1)
