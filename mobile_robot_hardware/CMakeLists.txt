@@ -117,6 +117,14 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
+
+  # scheduler, velocity, config update and watchdog the firmware's loop() is
+  # built from
+  ament_add_gtest(test_firmware_logic test/firmware/test_firmware_logic.cpp)
+  target_include_directories(test_firmware_logic PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
 endif()
 
 ament_package()
