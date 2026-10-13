@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <deque>
+#include <exception>
 #include <filesystem>
 #include <mutex>
 #include <optional>
@@ -177,8 +178,20 @@ private:
   }
 
   void handleLine_(const std::string &line) {
+    // recorded before answering: once the plugin got the ACK, e.g.
+    // on_configure() returned, the test may discardReceived() and expects
+    // the config line to be gone with it
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      lines_.push_back(line);
+    }
+    cv_.notify_all();
+
     const uint32_t id = configId(line);
-    if (id != 0) {
+    if (id == 0) {
+      return;
+    }
+    try {
       switch (mode_.load()) {
       case Mode::AUTO_ACK:
         sendLine("S,ACK," + std::to_string(id));
@@ -189,12 +202,10 @@ private:
       case Mode::SILENT:
         break;
       }
+    } catch (const std::exception &) {
+      // an exception escaping the reader thread would abort the whole test
+      // binary. The missing answer makes the waiting test fail instead
     }
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      lines_.push_back(line);
-    }
-    cv_.notify_all();
   }
 
   void writeAll_(const std::string &data) {
