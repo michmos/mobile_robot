@@ -10,6 +10,10 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`.
 
+## Controller (`MobileRobotController`)
+- Diff-drive controller: subscribes `/cmd_vel` (`TwistStamped`), writes the wheel velocity commands and publishes `/odom` and the `odom -> base_link` tf. Parameters are set in `mobile_robot_nodes/config/controller_manager.yaml` (`wheel_separation`/`wheel_radius` come from the URDF via the launch file).
+- **Command timeout:** `cmd_vel_timeout` (seconds, default 0.5, must be > 0). If no new `cmd_vel` arrived for longer than that, `update()` commands zero velocity until the next one arrives. The age is measured with the controller's update time, from the update in which the command was first seen; the header stamp is ignored (it can be 0 or from another clock). Needed because `twist_mux` just stops forwarding a timed-out input instead of publishing zero.
+
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
 - **Firmware and hardware plugin must always be updated together**, the two sides reject each other's lines after a wire format change.

@@ -25,6 +25,8 @@ controller_interface::CallbackReturn MobileRobotController::on_init() {
     get_node()->declare_parameter<double>("yaw_variance_per_radian", 0.0);
     get_node()->declare_parameter<double>("linear_velocity_variance", 0.0);
     get_node()->declare_parameter<double>("angular_velocity_variance", 0.0);
+    // same default as diff_drive_controller
+    get_node()->declare_parameter<double>("cmd_vel_timeout", 0.5);
   } catch (const std::exception &e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s",
                  e.what());
@@ -75,6 +77,7 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
       get_node()->get_parameter("linear_velocity_variance").as_double();
   variances_.angularVelocity =
       get_node()->get_parameter("angular_velocity_variance").as_double();
+  cmdVelTimeout_ = get_node()->get_parameter("cmd_vel_timeout").as_double();
 
   // validate params
   if (leftWheelJointName_.empty() || rightWheelJointName_.empty()) {
@@ -94,6 +97,12 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
                  "position_variance_per_meter/yaw_variance_per_radian/"
                  "linear_velocity_variance/angular_velocity_variance must "
                  "be > 0");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  // a timeout of 0 or less would either stop the robot on every cycle or
+  // (if read as "disabled") let it drive on forever when commands stop
+  if (cmdVelTimeout_ <= 0.0) {
+    RCLCPP_ERROR(get_node()->get_logger(), "cmd_vel_timeout must be > 0");
     return controller_interface::CallbackReturn::ERROR;
   }
 
@@ -127,6 +136,9 @@ MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
   // set cmd_vel buffer to safe command - TwistStamped's default constructor
   // zero-initializes linear/angular, no need to set fields individually
   cmdVelBuffer_.initRT(std::make_shared<geometry_msgs::msg::TwistStamped>());
+  // forget the command seen before deactivation, the first update() takes
+  // the buffer's content as a new command
+  lastCmdVel_.reset();
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -158,8 +170,26 @@ MobileRobotController::update(const rclcpp::Time &time,
   publishOdometry_(time);
 
   // write commands
-  auto t = cmdVelBuffer_.readFromRT();
-  auto cmds = inverseKinematics_(t->get()->twist.linear.x, t->get()->twist.angular.z);
+  const auto &cmdVel = *cmdVelBuffer_.readFromRT();
+  if (cmdVel != lastCmdVel_) {
+    // first update() that sees this command: take its time as receive time
+    lastCmdVel_ = cmdVel;
+    lastCmdVelTime_ = time;
+  }
+
+  // stop if the velocity source went quiet (e.g. twist_mux timed out its
+  // input, which stops forwarding instead of publishing zero). A negative
+  // age (time jumped back, e.g. a sim reset) also counts as stale.
+  const double cmdVelAge = (time - lastCmdVelTime_).seconds();
+  const bool cmdVelStale = cmdVelAge > cmdVelTimeout_ || cmdVelAge < 0.0;
+  double linearVel = 0.0;
+  double angularVel = 0.0;
+  if (!cmdVelStale) {
+    linearVel = lastCmdVel_->twist.linear.x;
+    angularVel = lastCmdVel_->twist.angular.z;
+  }
+
+  auto cmds = inverseKinematics_(linearVel, angularVel);
   if (!command_interfaces_[LEFT].set_value(cmds.first) ||
       !command_interfaces_[RIGHT].set_value(cmds.second)) {
     RCLCPP_ERROR(get_node()->get_logger(),
