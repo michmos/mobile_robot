@@ -309,6 +309,50 @@ TEST(SerializeMotorCmd, RoundTripThroughFirmwareParser) {
   }
 }
 
+// strtof() accepts these, but a velocity that isn't a finite number must be
+// rejected like any other malformed command, not drive the wheel (#22)
+TEST(FirmwareMotorCmdParser, RejectsNonFiniteVelocities) {
+  for (const std::string &line : {
+           std::string("M,nan,0"),
+           std::string("M,0,nan"),
+           std::string("M,NAN,0"),
+           std::string("M,-nan,0"),
+           std::string("M,inf,0"),
+           std::string("M,0,-inf"),
+           std::string("M,infinity,0"),
+           std::string("M,1e39,0"), // overflows float to inf
+       }) {
+    msgs::MotorCmd parsed;
+    EXPECT_EQ(parsed.init(line), -1) << line;
+  }
+}
+
+TEST(FirmwareMotorCmdParser, AcceptsLargestFiniteVelocity) {
+  msgs::MotorCmd parsed;
+  ASSERT_EQ(parsed.init("M,3.4e38,-3.4e38"), 0);
+  EXPECT_FLOAT_EQ(parsed.left_vel_cmd, 3.4e38f);
+  EXPECT_FLOAT_EQ(parsed.right_vel_cmd, -3.4e38f);
+}
+
+// a config field can't be NaN or inf either. NaN already failed the range
+// check, but an infinite gain passed it
+TEST(FirmwareConfigParser, RejectsNonFiniteFloats) {
+  const std::string valid = stripNewline(serializeConfig(samplePayload(), 9));
+  const std::string body = bodyOf(valid);
+  // C,9,<kp>,...: swap kp for a non-finite value
+  const size_t kpStart = body.find(',', 2) + 1;
+  const size_t kpEnd = body.find(',', kpStart);
+
+  for (const char *value : {"nan", "inf", "-inf"}) {
+    const std::string line =
+        sign(body.substr(0, kpStart) + value + body.substr(kpEnd));
+    msgs::Config parsed;
+    EXPECT_EQ(parsed.init(line), -1) << line;
+    EXPECT_FALSE(parsed.initialized) << line;
+    EXPECT_STREQ(parsed.lastError(), "malformed") << line;
+  }
+}
+
 TEST(ParseEncoderReport, RoundTripFromFirmware) {
   const int32_t lo = std::numeric_limits<int32_t>::min();
   const int32_t hi = std::numeric_limits<int32_t>::max();
