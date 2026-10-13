@@ -16,9 +16,9 @@ Tests: read `TESTING.md` before writing any test (standards, faking hardware, de
 colcon test --packages-select mobile_robot_hardware mobile_robot && colcon test-result --verbose
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same build and tests in `docker/Dockerfile.ros2`, plus the firmware compile and shellcheck; a missing test dependency goes into that Dockerfile.
+CI (`.github/workflows/ci.yml`) runs the same build and tests, plus the firmware compile and shellcheck, inside the prebuilt image `ghcr.io/michmos/mobile_robot_ci:kilted` (built from `docker/Dockerfile.ros2` by `.github/workflows/image.yml`). A missing test dependency goes into that Dockerfile; CI only sees it after the change is merged to `dev` and `image.yml` has run (see `OVERVIEW.md`).
 
-ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently through the Arduino IDE/arduino-cli with the `micro_ros_arduino` library installed; it is not part of the colcon build.
+ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently through the Arduino IDE/arduino-cli (core `esp32:esp32@2.0.17`, no extra libraries); it is not part of the colcon build.
 
 ## Code Conventions
 - Follow ROS 2 conventions throughout (topic/node naming, message usage, package layout). If you spot code that doesn't follow them, flag/correct it rather than silently matching it.

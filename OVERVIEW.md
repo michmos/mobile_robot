@@ -2,11 +2,11 @@
 # Overview
 [![CI](https://github.com/michmos/mobile_robot/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/michmos/mobile_robot/actions/workflows/ci.yml?query=branch%3Adev)
 
-A differential-drive mobile robot split across two compute targets, connected over micro-ROS (serial transport).
+A differential-drive mobile robot split across two compute targets, connected over a line-based serial protocol (see "Serial protocol" below).
 
 This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is not itself a ROS package (no top-level `package.xml`).
 
-- **`esp32_firmware/`** — Arduino/micro-ROS firmware for the ESP32 (encoders, L298N motor driver). No `package.xml`, so colcon ignores it; built/flashed separately via Arduino IDE/arduino-cli.
+- **`esp32_firmware/`** — Arduino firmware for the ESP32 (encoders, L298N motor driver). No `package.xml`, so colcon ignores it; built/flashed separately via Arduino IDE/arduino-cli.
 - **`mobile_robot_hardware/`** — `ros2_control` hardware interface plugin; owns the serial link to the ESP32.
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin.
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
@@ -14,10 +14,12 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`docker/Dockerfile.ros2`** — ROS 2 kilted + arduino-cli image used by CI and the agent sandbox (not by the robot).
 
 ## CI
-`.github/workflows/ci.yml` runs on pushes to `dev`/`main` and on pull requests:
-- **`ros`**: builds `docker/Dockerfile.ros2`, then `colcon build` + `colcon test` for `mobile_robot_hardware`, `mobile_robot_controller` and `mobile_robot` inside it (with `xv_11_driver` cloned next to the repo), fails on `colcon test-result --verbose` and uploads the test results as the `test-results` artifact.
-- **`firmware`**: `arduino-cli compile --fqbn esp32:esp32:esp32 esp32_firmware` with the core pinned to `esp32:esp32@2.0.17` (cached).
-- **`shell`**: `shellcheck pi_setup/start_robot.sh`.
+CI runs in a prebuilt image instead of building `docker/Dockerfile.ros2` on every run:
+- **`.github/workflows/image.yml`** builds `docker/Dockerfile.ros2` (`ros:kilted-ros-base` + the build/test dependencies + arduino-cli with the pinned ESP32 core) and pushes it to `ghcr.io/michmos/mobile_robot_ci:kilted`. It runs only on pushes to `dev` that change the Dockerfile or `image.yml`, and by hand (`workflow_dispatch`). There are no scheduled rebuilds: ROS/apt updates reach CI only with the next Dockerfile change or a manual run. The first run has to be started by hand, `ci.yml` can't pass before the image exists.
+- **`.github/workflows/ci.yml`** runs on pushes to `dev`/`main` and on pull requests. A PR that changes the Dockerfile is still tested against the old image until it is merged to `dev` and `image.yml` has run.
+  - **`ros`**: runs in the GHCR image; `colcon build` + `colcon test` for `mobile_robot_hardware`, `mobile_robot_controller` and `mobile_robot` (with `xv_11_driver` cloned next to the repo), same colcon calls as `TESTING.md` §7 but without the sandbox's resource limits (no `--memory`/`MAKEFLAGS=-j2`, parallel `colcon build`; `colcon test` stays `--executor sequential`), fails on `colcon test-result --verbose` and uploads the test results as the `test-results` artifact.
+  - **`firmware`**: runs in the same image (core `esp32:esp32@2.0.17` preinstalled under `ARDUINO_DIRECTORIES_DATA=/opt/arduino15`), `arduino-cli compile --fqbn esp32:esp32:esp32 esp32_firmware`.
+  - **`shell`**: `shellcheck pi_setup/start_robot.sh` on the plain runner.
 
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
