@@ -58,7 +58,17 @@ install(
 pluginlib_export_plugin_description_file(controller_interface plugin.xml)
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_dependencies(controller_interface hardware_interface rclcpp rclcpp_lifecycle pluginlib realtime_tools geometry_msgs nav_msgs tf2_msgs)
+ament_export_dependencies(
+  controller_interface
+  hardware_interface
+  rclcpp
+  rclcpp_lifecycle
+  pluginlib
+  realtime_tools
+  geometry_msgs
+  nav_msgs
+  tf2_msgs
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -69,6 +79,7 @@ if(BUILD_TESTING)
   # comment the line when this package is in a git repo and when
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/../lint/lint.cmake)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_ros REQUIRED)

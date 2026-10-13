@@ -107,10 +107,12 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
   }
 
   // set up subscriptions and publishers
-  cmdVelSub_ = get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
-      "cmd_vel", 10, [this](std::shared_ptr<geometry_msgs::msg::TwistStamped> msg) {
-        cmdVelCallback_(msg);
-      });
+  cmdVelSub_ =
+      get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
+          "cmd_vel", 10,
+          [this](std::shared_ptr<geometry_msgs::msg::TwistStamped> msg) {
+            cmdVelCallback_(msg);
+          });
   odomPub_ = get_node()->create_publisher<nav_msgs::msg::Odometry>("odom", 10);
   realtimeOdomPub_ = std::make_unique<
       realtime_tools::RealtimePublisher<nav_msgs::msg::Odometry>>(odomPub_);

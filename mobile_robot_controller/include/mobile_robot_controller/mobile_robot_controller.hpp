@@ -69,7 +69,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmdVelSub_;
   // written by cmdVelCallback_() (subscription thread), read by update()
   // (realtime thread)
-  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::TwistStamped>>
+  realtime_tools::RealtimeBuffer<
+      std::shared_ptr<geometry_msgs::msg::TwistStamped>>
       cmdVelBuffer_;
 
   // last command update() has seen and the update() time it was first seen
@@ -130,7 +131,8 @@ public:
 private:
   // subscription callback, stores msg into cmdVelBuffer_ for update() to pick
   // up
-  void cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg);
+  void
+  cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg);
 
   // inverse kinematics: body twist -> {leftWheelVel, rightWheelVel} (rad/s)
   std::pair<double, double> inverseKinematics_(double linearVel,

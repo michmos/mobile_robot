@@ -9,10 +9,7 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin.
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`.
-
-## Controller (`MobileRobotController`)
-- Diff-drive controller: subscribes `/cmd_vel` (`TwistStamped`), writes the wheel velocity commands and publishes `/odom` and the `odom -> base_link` tf. Parameters are set in `mobile_robot_nodes/config/controller_manager.yaml` (`wheel_separation`/`wheel_radius` come from the URDF via the launch file).
-- **Command timeout:** `cmd_vel_timeout` (seconds, default 0.5, must be > 0). If no new `cmd_vel` arrived for longer than that, `update()` commands zero velocity until the next one arrives. The age is measured with the controller's update time, from the update in which the command was first seen; the header stamp is ignored (it can be 0 or from another clock). Needed because `twist_mux` just stops forwarding a timed-out input instead of publishing zero.
+- **`lint/`** — linter setup shared by the three packages' `colcon test` (`lint.cmake`): C++ style via `ament_clang_format` with the repo's `.clang-format` instead of uncrustify, and xmllint validating `package.xml` against a local schema copy so no network is needed.
 
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
@@ -20,3 +17,7 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - Configuration handshake: the ESP32 sends `S,SETUP` every 500 ms until configured. The pi sends `C,<handshake_id>,...,<crc>` every 500 ms until it gets the matching `S,ACK,<handshake_id>` (a `S,NACK,...` is retried), and gives up after 10 s. Each handshake has a new, increasing id and a fixed payload. State machine: `mobile_robot_hardware/include/mobile_robot_hardware/handshake.hpp`.
 - A handshake runs on `on_configure`, when the ESP32 restarts (SETUP while configured) and on a live parameter change. Until it is acked, `write()` sends zero velocity. A handshake that fails while active makes `read()` return `ERROR`: controller_manager deactivates the component and its controllers, and the process keeps running (no systemd restart).
 - **Live tuning stops the robot briefly:** the hardware component's parameters (`pid_kp`, `pid_ki`, `pid_integral_limit`, `ff_slope_left/right`, `ff_min_duty_left/right`, defaults in `mobile_robot_nodes/description/ros2_control.xacro`) can be changed at runtime with `ros2 param set`. Every change starts a handshake: velocity commands are zero until the ACK, and the ESP32 brakes and resets its PI integrators when it applies the new values. Dragging e.g. an rqt slider therefore keeps the robot standing while tuning.
+
+## Controller (`MobileRobotController`)
+- Diff-drive controller: subscribes `/cmd_vel` (`TwistStamped`), writes the wheel velocity commands and publishes `/odom` and the `odom -> base_link` tf. Parameters are set in `mobile_robot_nodes/config/controller_manager.yaml` (`wheel_separation`/`wheel_radius` come from the URDF via the launch file).
+- **Command timeout:** `cmd_vel_timeout` (seconds, default 0.5, must be > 0). If no new `cmd_vel` arrived for longer than that, `update()` commands zero velocity until the next one arrives. The age is measured with the controller's update time, from the update in which the command was first seen; the header stamp is ignored (it can be 0 or from another clock). Needed because `twist_mux` just stops forwarding a timed-out input instead of publishing zero.
