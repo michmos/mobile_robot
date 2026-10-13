@@ -169,8 +169,9 @@ struct Interrupt {
 
 // all state of the fake core, one instance for the whole test binary
 struct State {
-  // a single clock, millis() is derived from it like on the real core
-  unsigned long micros = 0;
+  // a single 64 bit clock like the esp32's esp_timer, micros() and millis()
+  // are derived from it like on the real core
+  uint64_t micros = 0;
 
   std::map<uint8_t, uint8_t> pinModes;      // last pinMode() per pin
   std::map<uint8_t, uint8_t> digitalWrites; // last digitalWrite() per pin
@@ -182,12 +183,15 @@ struct State {
 inline State state;
 
 // ---- clock ----
-// note: unsigned long is 64 bit on the host but 32 bit on the esp32, so
-// micros()/millis() wraparound can't be reproduced with values set here alone
-inline void setMicros(unsigned long us) { state.micros = us; }
-inline void setMillis(unsigned long ms) { state.micros = ms * 1000UL; }
-inline void advanceMicros(unsigned long us) { state.micros += us; }
-inline void advanceMillis(unsigned long ms) { state.micros += ms * 1000UL; }
+// micros() and millis() truncate the clock to 32 bit like on the esp32, so
+// they wrap at 2^32 (micros() after ~71.6 min, millis() after ~49.7 days)
+// independently of each other. unsigned long is 64 bit on the host, so code
+// that has to survive the wrap must do its arithmetic in uint32_t (as it
+// would on the esp32, where unsigned long is 32 bit)
+inline void setMicros(uint64_t us) { state.micros = us; }
+inline void setMillis(uint64_t ms) { state.micros = ms * 1000ULL; }
+inline void advanceMicros(uint64_t us) { state.micros += us; }
+inline void advanceMillis(uint64_t ms) { state.micros += ms * 1000ULL; }
 
 // ---- gpio ----
 // sets what digitalRead(pin) returns, LOW for pins never set
@@ -254,8 +258,12 @@ inline void reset() {
 // firmware side: the arduino core api
 ///////////////////////////////////////////////////////////////////////////////
 
-inline unsigned long micros() { return arduino_stub::state.micros; }
-inline unsigned long millis() { return arduino_stub::state.micros / 1000UL; }
+inline unsigned long micros() {
+  return static_cast<uint32_t>(arduino_stub::state.micros);
+}
+inline unsigned long millis() {
+  return static_cast<uint32_t>(arduino_stub::state.micros / 1000ULL);
+}
 
 // advances the fake clock instead of blocking, so code that waits in a loop
 // sees time pass without the test sleeping
