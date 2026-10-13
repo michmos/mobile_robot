@@ -136,8 +136,7 @@ const BoundaryCase k_boundary_cases[] = {
     {"ki_inf", [](P &p) { p.ki = k_inf; }, protocol::CONFIG_KI, "ki"},
     {"integral_limit_min", [](P &p) { p.integral_limit = 0.0f; }, CONFIG_OK,
      "ok"},
-    {"integral_limit_below_min",
-     [](P &p) { p.integral_limit = -FLT_TRUE_MIN; },
+    {"integral_limit_below_min", [](P &p) { p.integral_limit = -FLT_TRUE_MIN; },
      protocol::CONFIG_INTEGRAL_LIMIT, "integral_limit"},
     {"integral_limit_max", [](P &p) { p.integral_limit = FLT_MAX; }, CONFIG_OK,
      "ok"},
@@ -162,8 +161,7 @@ const BoundaryCase k_boundary_cases[] = {
      "ok"},
     {"slope_right_zero", [](P &p) { p.slope_right = 0.0f; },
      protocol::CONFIG_SLOPE_RIGHT, "slope_right"},
-    {"slope_right_max", [](P &p) { p.slope_right = FLT_MAX; }, CONFIG_OK,
-     "ok"},
+    {"slope_right_max", [](P &p) { p.slope_right = FLT_MAX; }, CONFIG_OK, "ok"},
     {"slope_right_nan", [](P &p) { p.slope_right = k_nan; },
      protocol::CONFIG_SLOPE_RIGHT, "slope_right"},
     {"slope_right_inf", [](P &p) { p.slope_right = k_inf; },
@@ -172,8 +170,7 @@ const BoundaryCase k_boundary_cases[] = {
     // min duty: [0, 1), a duty of 1 would leave no room for the PI term
     {"min_duty_left_min", [](P &p) { p.min_duty_left = 0.0f; }, CONFIG_OK,
      "ok"},
-    {"min_duty_left_below_min",
-     [](P &p) { p.min_duty_left = -FLT_TRUE_MIN; },
+    {"min_duty_left_below_min", [](P &p) { p.min_duty_left = -FLT_TRUE_MIN; },
      protocol::CONFIG_MIN_DUTY_LEFT, "min_duty_left"},
     {"min_duty_left_max",
      [](P &p) { p.min_duty_left = std::nextafter(1.0f, 0.0f); }, CONFIG_OK,
@@ -186,8 +183,7 @@ const BoundaryCase k_boundary_cases[] = {
      protocol::CONFIG_MIN_DUTY_LEFT, "min_duty_left"},
     {"min_duty_right_min", [](P &p) { p.min_duty_right = 0.0f; }, CONFIG_OK,
      "ok"},
-    {"min_duty_right_below_min",
-     [](P &p) { p.min_duty_right = -FLT_TRUE_MIN; },
+    {"min_duty_right_below_min", [](P &p) { p.min_duty_right = -FLT_TRUE_MIN; },
      protocol::CONFIG_MIN_DUTY_RIGHT, "min_duty_right"},
     {"min_duty_right_max",
      [](P &p) { p.min_duty_right = std::nextafter(1.0f, 0.0f); }, CONFIG_OK,
@@ -242,8 +238,7 @@ const BoundaryCase k_boundary_cases[] = {
     // report rate: [1, control_rate_hz] Hz
     {"report_rate_hz_zero", [](P &p) { p.report_rate_hz = 0; },
      protocol::CONFIG_REPORT_RATE_HZ, "report_rate_hz"},
-    {"report_rate_hz_min", [](P &p) { p.report_rate_hz = 1; }, CONFIG_OK,
-     "ok"},
+    {"report_rate_hz_min", [](P &p) { p.report_rate_hz = 1; }, CONFIG_OK, "ok"},
     {"report_rate_hz_equals_control_rate",
      [](P &p) { p.report_rate_hz = p.control_rate_hz; }, CONFIG_OK, "ok"},
     {"report_rate_hz_above_control_rate",
@@ -289,8 +284,7 @@ TEST_P(ConfigBoundary, FirmwareReplyNamesFieldToPi) {
     EXPECT_EQ(detail, "");
   } else {
     EXPECT_FALSE(received.initialized);
-    ASSERT_TRUE(parseHandshakeReply(reply, k_nack_prefix, id, detail))
-        << reply;
+    ASSERT_TRUE(parseHandshakeReply(reply, k_nack_prefix, id, detail)) << reply;
     EXPECT_EQ(detail, GetParam().expectedName);
   }
   EXPECT_EQ(id, handshakeId);
@@ -313,9 +307,9 @@ TEST(ConfigReply, ChecksumNackParsedByPi) {
 
   uint32_t id = 0;
   std::string detail;
-  ASSERT_TRUE(parseHandshakeReply(
-      stripNewline(msgs::configReply(received).serialize()), k_nack_prefix, id,
-      detail));
+  ASSERT_TRUE(
+      parseHandshakeReply(stripNewline(msgs::configReply(received).serialize()),
+                          k_nack_prefix, id, detail));
   EXPECT_EQ(id, 8u);
   EXPECT_EQ(detail, "checksum");
 }
@@ -332,9 +326,9 @@ TEST(ConfigReply, MalformedIdNackParsedByPiAsIdZero) {
 
   uint32_t id = 1;
   std::string detail;
-  ASSERT_TRUE(parseHandshakeReply(
-      stripNewline(msgs::configReply(received).serialize()), k_nack_prefix, id,
-      detail));
+  ASSERT_TRUE(
+      parseHandshakeReply(stripNewline(msgs::configReply(received).serialize()),
+                          k_nack_prefix, id, detail));
   EXPECT_EQ(id, 0u);
   EXPECT_EQ(detail, "malformed");
 }
@@ -463,9 +457,9 @@ INSTANTIATE_TEST_SUITE_P(Positions, CrcBitFlip,
 namespace {
 
 // fields of a config line: C,<id>,<8 floats>,<3 uint16>,<2 bools>,<crc>
-constexpr size_t k_field_handshake_id = 1;   // parseUInt32_
-constexpr size_t k_field_watchdog = 10;      // parseUInt16_
-constexpr size_t k_field_invert_left = 13;   // parseBool_
+constexpr size_t k_field_handshake_id = 1; // parseUInt32_
+constexpr size_t k_field_watchdog = 10;    // parseUInt16_
+constexpr size_t k_field_invert_left = 13; // parseBool_
 
 struct ParserCase {
   const char *name;
@@ -482,8 +476,7 @@ void PrintTo(const ParserCase &c, std::ostream *os) { *os << c.name; }
 const ParserCase k_parser_cases[] = {
     // parseUInt32_ (handshake id)
     {"id_one", k_field_handshake_id, "1", nullptr, 1},
-    {"id_uint32_max", k_field_handshake_id, "4294967295", nullptr,
-     4294967295u},
+    {"id_uint32_max", k_field_handshake_id, "4294967295", nullptr, 4294967295u},
     {"id_leading_zeros", k_field_handshake_id, "007", nullptr, 7},
     // strtoull accepts a '+', the pi never sends one
     {"id_plus_sign", k_field_handshake_id, "+7", nullptr, 7},
@@ -562,10 +555,10 @@ TEST_P(FirmwareNumberParser, ParsesField) {
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    Fields, FirmwareNumberParser, ::testing::ValuesIn(k_parser_cases),
-    [](const ::testing::TestParamInfo<ParserCase> &info) {
-      return std::string(info.param.name);
-    });
+INSTANTIATE_TEST_SUITE_P(Fields, FirmwareNumberParser,
+                         ::testing::ValuesIn(k_parser_cases),
+                         [](const ::testing::TestParamInfo<ParserCase> &info) {
+                           return std::string(info.param.name);
+                         });
 
 } // namespace
