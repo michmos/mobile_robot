@@ -181,7 +181,7 @@ MobileRobotHardware::on_init(const HardwareComponentInterfaceParams &params) {
 
   declareTunableParams_();
 
-  RCLCPP_INFO(this->get_logger(), "Configured for esp32 on %s at %u baud",
+  RCLCPP_INFO(this->get_logger(), "Initialized for esp32 on %s at %u baud",
               serialPort_.c_str(), baudRate_);
   return CallbackReturn::SUCCESS;
 }
