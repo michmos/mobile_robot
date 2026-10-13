@@ -76,6 +76,23 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_kinematics test/test_kinematics.cpp)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
+
+  find_package(ament_cmake_gmock REQUIRED)
+  find_package(controller_manager REQUIRED)
+  find_package(lifecycle_msgs REQUIRED)
+
+  ament_add_gmock(test_mobile_robot_controller test/test_mobile_robot_controller.cpp)
+  target_link_libraries(test_mobile_robot_controller
+    ${PROJECT_NAME}
+    ${lifecycle_msgs_TARGETS}
+  )
+
+  # loads the plugin through pluginlib, so it needs the installed package
+  # (source the install space before running it)
+  ament_add_gmock(test_load_mobile_robot_controller test/test_load_mobile_robot_controller.cpp)
+  target_link_libraries(test_load_mobile_robot_controller
+    controller_manager::controller_manager
+  )
 endif()
 
 ament_package()

@@ -11,7 +11,7 @@ Launch:
 ros2 launch mobile_robot mobile_robot_launch.py
 ```
 
-Tests: read `TESTING.md` before writing any test (standards, faking hardware, definition of done). `mobile_robot_hardware` has gtest unit tests for the esp32 handshake and the serial wire format (`mobile_robot_hardware/test/`), `mobile_robot_controller` for the kinematics/odometry math (`mobile_robot_controller/test/`). Run them from the workspace root:
+Tests: read `TESTING.md` before writing any test (standards, faking hardware, definition of done). `mobile_robot_hardware` has gtest unit tests for the esp32 handshake and the serial wire format (`mobile_robot_hardware/test/`), `mobile_robot_controller` for the kinematics/odometry math and the controller driven through its lifecycle with hand-made interfaces (`mobile_robot_controller/test/`). Run them from the workspace root:
 ```bash
 colcon test --packages-select mobile_robot_hardware mobile_robot_controller && colcon test-result --verbose
 ```
