@@ -10,6 +10,13 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`.
 
+## Launch arguments (`mobile_robot_launch.py`)
+The defaults are the robot setup; a dev machine (no ESP32, lidar or foxglove) runs
+`ros2 launch mobile_robot mobile_robot_launch.py use_mock_hardware:=true use_lidar:=false use_foxglove:=false`.
+- `use_mock_hardware` (default `false`) — passed to the xacro description: `true` replaces `MobileRobotHardware` (`/dev/esp32`) with `mock_components/GenericSystem` from `hardware_interface`. It runs with `calculate_dynamics`, so the commanded wheel velocity is integrated into the position state and odometry moves.
+- `use_lidar` (default `true`) — start `xv_11_driver` on `/dev/ttyAMA0`.
+- `use_foxglove` (default `true`) — start `foxglove_bridge`.
+
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
 - **Firmware and hardware plugin must always be updated together**, the two sides reject each other's lines after a wire format change.
