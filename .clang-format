@@ -1,0 +1,4 @@
+# House C++ style, checked by ament_clang_format in every package's
+# `colcon test` (see lint/lint.cmake). It is clang-format's LLVM style, which
+# the existing code already follows. Format with: clang-format -i <files>
+BasedOnStyle: LLVM
