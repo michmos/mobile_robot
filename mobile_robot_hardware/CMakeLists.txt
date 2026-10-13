@@ -120,6 +120,21 @@ if(BUILD_TESTING)
   )
   # openpty() lives in libutil
   target_link_libraries(test_mobile_robot_hardware ${PROJECT_NAME} util)
+
+  # encoder reports and the other incoming lines turned into joint states,
+  # same fake esp32 as above. The plugin creates a node: the isolated variant
+  # runs the test on its own ROS domain, kept on this machine
+  find_package(ament_cmake_ros REQUIRED)
+  ament_add_ros_isolated_gtest(test_encoder_state
+    test/test_encoder_state.cpp
+    TIMEOUT 60
+  )
+  target_include_directories(test_encoder_state PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+  target_link_libraries(test_encoder_state ${PROJECT_NAME} util)
 endif()
 
 ament_package()
