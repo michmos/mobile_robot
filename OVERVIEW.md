@@ -9,6 +9,7 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin (diff drive). The kinematics/odometry math lives in free functions in `include/mobile_robot_controller/kinematics.hpp`.
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`.
+- **`lint/`** — linter setup shared by the three packages' `colcon test` (`lint.cmake`): C++ style via `ament_clang_format` with the repo's `.clang-format` instead of uncrustify, and xmllint validating `package.xml` against a local schema copy so no network is needed.
 
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
