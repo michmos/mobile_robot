@@ -18,6 +18,7 @@ find_package(serial_driver REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_hardware.cpp
+  src/params.cpp
   src/wire_protocol.cpp
 )
 
