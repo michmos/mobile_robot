@@ -77,8 +77,7 @@ std::vector<rclcpp::Parameter> validParameters() {
                         k_positionVariancePerMeter),
       rclcpp::Parameter("yaw_variance_per_radian", k_yawVariancePerRadian),
       rclcpp::Parameter("linear_velocity_variance", k_linearVelocityVariance),
-      rclcpp::Parameter("angular_velocity_variance",
-                        k_angularVelocityVariance),
+      rclcpp::Parameter("angular_velocity_variance", k_angularVelocityVariance),
   };
 }
 
@@ -124,14 +123,14 @@ protected:
   void SetUp() override {
     controller_ = std::make_unique<MobileRobotController>();
 
-    leftPosState_ =
-        std::make_shared<hardware_interface::StateInterface>(k_leftJoint, HW_IF_POSITION);
-    rightPosState_ =
-        std::make_shared<hardware_interface::StateInterface>(k_rightJoint, HW_IF_POSITION);
-    leftVelCmd_ =
-        std::make_shared<hardware_interface::CommandInterface>(k_leftJoint, HW_IF_VELOCITY);
-    rightVelCmd_ =
-        std::make_shared<hardware_interface::CommandInterface>(k_rightJoint, HW_IF_VELOCITY);
+    leftPosState_ = std::make_shared<hardware_interface::StateInterface>(
+        k_leftJoint, HW_IF_POSITION);
+    rightPosState_ = std::make_shared<hardware_interface::StateInterface>(
+        k_rightJoint, HW_IF_POSITION);
+    leftVelCmd_ = std::make_shared<hardware_interface::CommandInterface>(
+        k_leftJoint, HW_IF_VELOCITY);
+    rightVelCmd_ = std::make_shared<hardware_interface::CommandInterface>(
+        k_rightJoint, HW_IF_VELOCITY);
     setWheelPositions(0.0, 0.0);
     std::ignore = leftVelCmd_->set_value(k_untouched);
     std::ignore = rightVelCmd_->set_value(k_untouched);
@@ -254,21 +253,21 @@ protected:
         return false;
       }
       executor_->spin_some();
-      return lastOdom_ && lastTf_ && rclcpp::Time(lastOdom_->header.stamp) == t &&
+      return lastOdom_ && lastTf_ &&
+             rclcpp::Time(lastOdom_->header.stamp) == t &&
              !lastTf_->transforms.empty() &&
              rclcpp::Time(lastTf_->transforms[0].header.stamp) == t;
-    })) << "no odom/tf message for t = " << time << " arrived";
+    })) << "no odom/tf message for t = "
+        << time << " arrived";
   }
 
   void subscribeOdometry() {
     odomSub_ = testNode_->create_subscription<nav_msgs::msg::Odometry>(
-        "/odom", 10, [this](nav_msgs::msg::Odometry::SharedPtr msg) {
-          lastOdom_ = msg;
-        });
+        "/odom", 10,
+        [this](nav_msgs::msg::Odometry::SharedPtr msg) { lastOdom_ = msg; });
     tfSub_ = testNode_->create_subscription<tf2_msgs::msg::TFMessage>(
-        "/tf", 10, [this](tf2_msgs::msg::TFMessage::SharedPtr msg) {
-          lastTf_ = msg;
-        });
+        "/tf", 10,
+        [this](tf2_msgs::msg::TFMessage::SharedPtr msg) { lastTf_ = msg; });
   }
 
   void expectPose(double x, double y, double heading) const {
@@ -363,7 +362,8 @@ TEST_F(MobileRobotControllerTest, ConfigureCanBeRetriedAfterFailure) {
             controller_interface::return_type::OK);
   ASSERT_FALSE(configure());
 
-  controller_->get_node()->set_parameter(rclcpp::Parameter("wheel_radius", k_radius));
+  controller_->get_node()->set_parameter(
+      rclcpp::Parameter("wheel_radius", k_radius));
   EXPECT_TRUE(configure());
 }
 
@@ -379,21 +379,20 @@ TEST_P(InvalidParameterTest, ConfigureFails) {
 
 INSTANTIATE_TEST_SUITE_P(
     MobileRobotControllerTest, InvalidParameterTest,
-    ::testing::Values(
-        rclcpp::Parameter("left_wheel_joint_name", ""),
-        rclcpp::Parameter("right_wheel_joint_name", ""),
-        rclcpp::Parameter("wheel_separation", 0.0),
-        rclcpp::Parameter("wheel_separation", -0.191),
-        rclcpp::Parameter("wheel_radius", 0.0),
-        rclcpp::Parameter("wheel_radius", -0.0335),
-        rclcpp::Parameter("position_variance_per_meter", 0.0),
-        rclcpp::Parameter("position_variance_per_meter", -0.0025),
-        rclcpp::Parameter("yaw_variance_per_radian", 0.0),
-        rclcpp::Parameter("yaw_variance_per_radian", -0.01),
-        rclcpp::Parameter("linear_velocity_variance", 0.0),
-        rclcpp::Parameter("linear_velocity_variance", -0.0003),
-        rclcpp::Parameter("angular_velocity_variance", 0.0),
-        rclcpp::Parameter("angular_velocity_variance", -0.08)),
+    ::testing::Values(rclcpp::Parameter("left_wheel_joint_name", ""),
+                      rclcpp::Parameter("right_wheel_joint_name", ""),
+                      rclcpp::Parameter("wheel_separation", 0.0),
+                      rclcpp::Parameter("wheel_separation", -0.191),
+                      rclcpp::Parameter("wheel_radius", 0.0),
+                      rclcpp::Parameter("wheel_radius", -0.0335),
+                      rclcpp::Parameter("position_variance_per_meter", 0.0),
+                      rclcpp::Parameter("position_variance_per_meter", -0.0025),
+                      rclcpp::Parameter("yaw_variance_per_radian", 0.0),
+                      rclcpp::Parameter("yaw_variance_per_radian", -0.01),
+                      rclcpp::Parameter("linear_velocity_variance", 0.0),
+                      rclcpp::Parameter("linear_velocity_variance", -0.0003),
+                      rclcpp::Parameter("angular_velocity_variance", 0.0),
+                      rclcpp::Parameter("angular_velocity_variance", -0.08)),
     [](const ::testing::TestParamInfo<rclcpp::Parameter> &info) {
       std::string name = info.param.get_name();
       if (info.param.get_type() == rclcpp::ParameterType::PARAMETER_STRING) {
@@ -442,7 +441,8 @@ TEST_F(MobileRobotControllerTest, NoCommandYetGivesZeroWheelCommands) {
 
 TEST_F(MobileRobotControllerTest, CmdVelIsConvertedToWheelCommands) {
   ASSERT_NO_FATAL_FAILURE(startController());
-  // v = 0.2 m/s, w = 1 rad/s: left = (0.2 - 0.1) / 0.05, right = (0.2 + 0.1) / 0.05
+  // v = 0.2 m/s, w = 1 rad/s: left = (0.2 - 0.1) / 0.05, right = (0.2 + 0.1) /
+  // 0.05
   sendCommand(0.2, 1.0, 2.0, 6.0);
 }
 
@@ -469,7 +469,8 @@ TEST_F(MobileRobotControllerTest, IgnoresNonPlanarTwistComponents) {
     }
     return std::abs(leftCommand() + 2.0) < k_eps &&
            std::abs(rightCommand() + 2.0) < k_eps;
-  })) << "last: " << leftCommand() << ", " << rightCommand();
+  })) << "last: "
+      << leftCommand() << ", " << rightCommand();
 }
 
 TEST_F(MobileRobotControllerTest, KeepsLastCommandUntilANewOneArrives) {
@@ -568,7 +569,8 @@ TEST_F(MobileRobotControllerTest, OdometryUsesOdomAndBaseLinkFrames) {
   EXPECT_EQ(lastTf_->transforms[0].child_frame_id, "base_link");
 }
 
-TEST_F(MobileRobotControllerTest, OdometryCovarianceGrowsWithDistanceAndRotation) {
+TEST_F(MobileRobotControllerTest,
+       OdometryCovarianceGrowsWithDistanceAndRotation) {
   subscribeOdometry();
   ASSERT_NO_FATAL_FAILURE(startController());
   update(0.0, 0.01);
