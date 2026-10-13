@@ -166,8 +166,9 @@ protected:
 
     cmdVelPub_ = testNode_->create_publisher<geometry_msgs::msg::TwistStamped>(
         "/cmd_vel", 10);
-    ASSERT_TRUE(waitFor([&] { return cmdVelPub_->get_subscription_count() > 0; }))
-        << "nothing subscribes to /cmd_vel";
+    ASSERT_TRUE(waitFor([&] {
+      return cmdVelPub_->get_subscription_count() > 0;
+    })) << "nothing subscribes to /cmd_vel";
   }
 
   double leftCommand() const { return leftVelCmd_->get_optional().value(); }
@@ -246,8 +247,9 @@ INSTANTIATE_TEST_SUITE_P(NonPositive, CmdVelTimeoutInvalidTest,
 
 TEST_F(CmdVelTimeoutTest, DefaultTimeoutIsHalfASecond) {
   startController();
-  EXPECT_NEAR(controller_->get_node()->get_parameter("cmd_vel_timeout").as_double(),
-              k_defaultTimeout, k_eps);
+  EXPECT_NEAR(
+      controller_->get_node()->get_parameter("cmd_vel_timeout").as_double(),
+      k_defaultTimeout, k_eps);
 }
 
 // ---------------------------------------------------------------------------
