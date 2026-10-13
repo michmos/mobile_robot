@@ -71,12 +71,14 @@ private:
 
   // interval between re-sends of unacknowledged config
   static constexpr std::chrono::milliseconds k_config_retry_interval{500};
-  // this has to cover the esp32 booting after the port was opened
-  static constexpr std::chrono::milliseconds k_handshake_timeout{10000};
+  // this has to cover the esp32 booting after the port was opened. Can be
+  // overridden with the optional hardware parameter handshake_timeout_ms
+  static constexpr std::chrono::milliseconds k_default_handshake_timeout{
+      10000};
 
   // only touched by on_configure() and the realtime loop, which never run
-  // concurrently
-  Handshake handshake_{k_config_retry_interval, k_handshake_timeout};
+  // concurrently. Replaced in on_init() if handshake_timeout_ms is set
+  Handshake handshake_{k_config_retry_interval, k_default_handshake_timeout};
 
   // snapshot of config_ taken when the running handshake started. Every
   // re-send of one handshake carries the same values, so an ACK for its id
