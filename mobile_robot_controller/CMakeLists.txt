@@ -78,10 +78,15 @@ if(BUILD_TESTING)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
 
   find_package(ament_cmake_gmock REQUIRED)
+  find_package(ament_cmake_ros REQUIRED)
   find_package(controller_manager REQUIRED)
   find_package(lifecycle_msgs REQUIRED)
 
-  ament_add_gmock(test_mobile_robot_controller test/test_mobile_robot_controller.cpp)
+  # these tests create ROS nodes and publish on /cmd_vel: the isolated variant
+  # gives each test its own ROS domain limited to localhost, so a robot on the
+  # same network can't receive the commands and outside traffic can't reach
+  # the tests
+  ament_add_ros_isolated_gmock(test_mobile_robot_controller test/test_mobile_robot_controller.cpp)
   target_link_libraries(test_mobile_robot_controller
     ${PROJECT_NAME}
     ${lifecycle_msgs_TARGETS}
@@ -89,7 +94,7 @@ if(BUILD_TESTING)
 
   # loads the plugin through pluginlib, so it needs the installed package
   # (source the install space before running it)
-  ament_add_gmock(test_load_mobile_robot_controller test/test_load_mobile_robot_controller.cpp)
+  ament_add_ros_isolated_gmock(test_load_mobile_robot_controller test/test_load_mobile_robot_controller.cpp)
   target_link_libraries(test_load_mobile_robot_controller
     controller_manager::controller_manager
   )
