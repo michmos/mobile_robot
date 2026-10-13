@@ -103,6 +103,23 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
+
+  # drives the plugin through its lifecycle against a fake esp32 on a pty
+  # (test/fake_esp32.hpp). The failing handshake cases wait for their
+  # (shortened) timeout, the whole file takes a few seconds
+  ament_add_gtest(test_mobile_robot_hardware
+    test/test_mobile_robot_hardware.cpp
+    TIMEOUT 60
+    # the plugin creates a node, keep its DDS discovery on this machine
+    ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+  )
+  target_include_directories(test_mobile_robot_hardware PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+  # openpty() lives in libutil
+  target_link_libraries(test_mobile_robot_hardware ${PROJECT_NAME} util)
 endif()
 
 ament_package()
