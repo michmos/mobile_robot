@@ -12,6 +12,13 @@
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_clang_format</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <!-- test_urdf_kinematics.py expands the real robot description -->
+  <test_depend>xacro</test_depend>
+  <test_depend>python3-yaml</test_depend>
 
   <!-- mobile_robot_launch.py: brings up controller_manager against
        MobileRobotHardware, with mobile_robot_controller spawned,

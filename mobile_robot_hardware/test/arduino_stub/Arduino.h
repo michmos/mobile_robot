@@ -21,7 +21,8 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 // the arduino core defines these as macros. Constants instead, so they can't
-// clash with names in gtest or the standard library. Values match the esp32 core
+// clash with names in gtest or the standard library. Values match the esp32
+// core
 constexpr uint8_t LOW = 0x0;
 constexpr uint8_t HIGH = 0x1;
 
@@ -44,10 +45,8 @@ struct portMUX_TYPE {
   uint32_t owner;
   uint32_t count;
 };
-#define portMUX_INITIALIZER_UNLOCKED \
-  { \
-    0, 0 \
-  }
+#define portMUX_INITIALIZER_UNLOCKED                                           \
+  { 0, 0 }
 inline void portENTER_CRITICAL(portMUX_TYPE *) {}
 inline void portEXIT_CRITICAL(portMUX_TYPE *) {}
 
