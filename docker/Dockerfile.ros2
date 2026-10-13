@@ -1,10 +1,42 @@
-# Build/test image for CI (.github/workflows/ci.yml, job `ros`) and for the agent
-# sandbox, which has no ROS 2 or arduino-cli installed (see ros2_ws/AGENTS.md).
-# The maintainer installs the dependencies natively and does not use this image.
-# Missing a dependency? Add it below - CI picks it up automatically.
-FROM osrf/ros:kilted-desktop
+# Build/test image for CI and for the agent sandbox, which has no ROS 2 or
+# arduino-cli installed (see ros2_ws/AGENTS.md). The maintainer installs the
+# dependencies natively and does not use this image.
+# CI doesn't build this file on every run: .github/workflows/image.yml builds it
+# and pushes ghcr.io/michmos/mobile_robot_ci:kilted only when this file changes
+# on `dev` (or by hand), and the jobs in .github/workflows/ci.yml run inside it.
+# Missing a dependency? Add it below. CI sees it only after the change is merged
+# to `dev` and image.yml has run.
+FROM ros:kilted-ros-base
 
+LABEL org.opencontainers.image.source=https://github.com/michmos/mobile_robot
+
+# ros-base instead of osrf/ros:kilted-desktop: desktop is several GB of GUI
+# tools, demos and rviz/rqt that nothing here needs. The first block is what the
+# build and tests use but that desktop brought in implicitly. Most of it is
+# already in ros-base (ros_core) or the ros:*-ros-base image, it is listed so a
+# change of the base image can't drop it silently.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      curl \
+      git \
+      python3-colcon-common-extensions \
+      python3-pip \
+      python3-pytest \
+      python3-yaml \
+      ros-kilted-ament-cmake-gtest \
+      ros-kilted-ament-cmake-pytest \
+      ros-kilted-ament-cmake-ros \
+      ros-kilted-ament-lint-auto \
+      ros-kilted-ament-lint-common \
+      ros-kilted-launch-ros \
+      ros-kilted-launch-testing \
+      ros-kilted-launch-testing-ament-cmake \
+      ros-kilted-launch-testing-ros \
+      ros-kilted-rclpy \
+      ros-kilted-robot-state-publisher \
+      ros-kilted-joy \
+      ros-kilted-teleop-twist-joy \
       ros-kilted-ros2-control \
       ros-kilted-ros2-controllers \
       ros-kilted-serial-driver \
@@ -14,17 +46,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-kilted-ament-cmake-clang-format \
       ros-kilted-twist-mux \
       ros-kilted-foxglove-bridge \
-      python3-pip \
     && rm -rf /var/lib/apt/lists/*
+# ^ joy/teleop_twist_joy: used by mobile_robot_nodes/launch/joystick_launch.py
+#   but not declared in package.xml, desktop shipped them.
 
 # compile check for the esp32 firmware (esp32_firmware/), not used at runtime
 # core pinned to 2.0.17 to match the maintainer's local Arduino setup - the
 # esp32:esp32@3.x line dropped ledcSetup/ledcAttachPin, used by inc/L298.hpp
-RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
-      | BINDIR=/usr/local/bin sh \
- && arduino-cli config init \
- && arduino-cli config add board_manager.additional_urls \
-      https://espressif.github.io/arduino-esp32/package_esp32_index.json \
+# The data dir and the board URL are set through env vars instead of
+# ~/.arduino15/arduino-cli.yaml: GitHub container jobs run with HOME=/github/home,
+# so anything under /root would not be found there.
+ENV ARDUINO_DIRECTORIES_DATA=/opt/arduino15 \
+    ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS=https://espressif.github.io/arduino-esp32/package_esp32_index.json
+# arduino-cli pinned (latest release when this was written), install.sh taken
+# from the same tag
+ARG ARDUINO_CLI_VERSION=v1.5.1
+RUN curl -fsSL "https://raw.githubusercontent.com/arduino/arduino-cli/${ARDUINO_CLI_VERSION}/install.sh" \
+      | BINDIR=/usr/local/bin sh -s "${ARDUINO_CLI_VERSION}" \
  && arduino-cli core update-index \
  && arduino-cli core install esp32:esp32@2.0.17 \
  && pip3 install --break-system-packages pyserial
