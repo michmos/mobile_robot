@@ -103,6 +103,18 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
+
+  # pins the parts of the wire format both sides have to agree on, also
+  # against the firmware's msgs::* serializers and parsers
+  ament_add_gtest(test_wire_contract
+    test/test_wire_contract.cpp
+    src/wire_protocol.cpp
+  )
+  target_include_directories(test_wire_contract PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
 endif()
 
 ament_package()
