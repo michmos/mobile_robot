@@ -1,11 +1,11 @@
 #ifndef MOBILE_ROBOT_HARDWARE_HPP
 #define MOBILE_ROBOT_HARDWARE_HPP
 
+#include "mobile_robot_hardware/handshake.hpp"
 #include <hardware_interface/handle.hpp>
 #include <hardware_interface/system_interface.hpp>
 #include <hardware_interface/types/hardware_component_interface_params.hpp>
 #include <hardware_interface/types/hardware_interface_return_values.hpp>
-#include "mobile_robot_hardware/handshake.hpp"
 
 #include <io_context/io_context.hpp>
 #include <rcl_interfaces/msg/set_parameters_result.hpp>
@@ -69,10 +69,9 @@ private:
     mutable std::mutex mutex_;
   } config_;
 
-  // how often the config is re-sent until the esp32 answers
+  // interval between re-sends of unacknowledged config
   static constexpr std::chrono::milliseconds k_config_retry_interval{500};
-  // has to cover the esp32 booting after the port was opened. Without a
-  // deadline a dead esp32 would hang the lifecycle transition forever
+  // this has to cover the esp32 booting after the port was opened
   static constexpr std::chrono::milliseconds k_handshake_timeout{10000};
 
   // only touched by on_configure() and the realtime loop, which never run
@@ -209,8 +208,9 @@ private:
   // about one without a valid handshake id
   void handleHandshakeReply_(const std::string &line);
 
-  // handles all buffered lines (logs, SETUP, ACK, NACK, encoder reports). Of the encoder
-  // reports received since the last SETUP event, only the newest is processed
+  // handles all buffered lines (logs, SETUP, ACK, NACK, encoder reports). Of
+  // the encoder reports received since the last SETUP event, only the newest is
+  // processed
   void processNewLines_();
 
   // parses an encoder report and updates the position and velocity states
