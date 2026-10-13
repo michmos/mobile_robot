@@ -338,9 +338,9 @@ TEST_F(DriveTest, UpdateConfigBrakesAndResetsTheIntegrators) {
   receiveCmd("2.0", "2.0");
 
   // the wheels don't turn, so the integrators wind up: 1 * 2 rad/s * 0.1 s
-  updateMotor(0, 0, 0);       // first sample: feedforward only
-  updateMotor(0, 0, 100000);  // 0.2 ff, integral 0 -> 0.2
-  updateMotor(0, 0, 200000);  // 0.2 ff + 0.2 integral
+  updateMotor(0, 0, 0);      // first sample: feedforward only
+  updateMotor(0, 0, 100000); // 0.2 ff, integral 0 -> 0.2
+  updateMotor(0, 0, 200000); // 0.2 ff + 0.2 integral
   ASSERT_NEAR(duty(k_channelLeft), 0.4f, k_dutyTol);
 
   ASSERT_TRUE(receiveConfig(2, p));
