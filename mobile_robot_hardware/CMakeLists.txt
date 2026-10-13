@@ -104,6 +104,18 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
+
+  # pure functions, no node and no serial port: only the hardware_interface
+  # types and lexical casts are needed, not the whole plugin
+  ament_add_gtest(test_params
+    test/test_params.cpp
+    src/params.cpp
+  )
+  target_include_directories(test_params PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+  )
+  target_link_libraries(test_params ${hardware_interface_TARGETS})
 endif()
 
 ament_package()
