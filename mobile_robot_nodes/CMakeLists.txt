@@ -41,6 +41,18 @@ if(BUILD_TESTING)
     test/test_mobile_robot_launch.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
+
+  # Full bringup with mock hardware. The isolated runner (ament_cmake_ros)
+  # picks a free ROS_DOMAIN_ID, and discovery stays on localhost, so test
+  # commands never reach a real robot on the LAN.
+  find_package(ament_cmake_ros REQUIRED)
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_bringup.launch.py
+    TARGET test_bringup
+    TIMEOUT 60
+    RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py"
+    APPEND_ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+  )
 endif()
 
 ament_package()

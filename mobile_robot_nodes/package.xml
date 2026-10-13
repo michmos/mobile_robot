@@ -20,6 +20,17 @@
   <!-- test_mobile_robot_launch.py builds the launch description -->
   <test_depend>launch</test_depend>
   <test_depend>launch_ros</test_depend>
+  <!-- test_bringup.launch.py runs the full launch with mock hardware -->
+  <test_depend>ament_cmake_ros</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>controller_manager_msgs</test_depend>
+  <test_depend>geometry_msgs</test_depend>
+  <test_depend>nav_msgs</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>tf2_ros</test_depend>
 
   <!-- mobile_robot_launch.py: brings up controller_manager against
        MobileRobotHardware (or mock_components/GenericSystem from
