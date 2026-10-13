@@ -320,8 +320,8 @@ TEST_F(EncoderStateTest, LogLineIsLoggedAndKeepsState) {
   feed(240, -240, 1500000);
 
   fake_->sendLine("L,motor driver overheating");
-  ASSERT_TRUE(
-      readUntil([] { return LogCapture::contains("motor driver overheating"); }));
+  ASSERT_TRUE(readUntil(
+      [] { return LogCapture::contains("motor driver overheating"); }));
 
   EXPECT_NEAR(leftPosition(), ticksToRad(240), k_tolerance);
   EXPECT_NEAR(rightPosition(), ticksToRad(-240), k_tolerance);
@@ -352,18 +352,18 @@ TEST_P(SkippedLineTest, IsSkippedWithoutChangingState) {
 
 INSTANTIATE_TEST_SUITE_P(
     EncoderState, SkippedLineTest,
-    ::testing::Values("",                       // empty line
-                      "garbage",                // no comma at all
-                      "X,1,2,3",                // unknown type
-                      "S,UNKNOWN",              // unknown status
-                      "e,9000,9000,1700000",    // lower case
-                      "E,9000,9000",            // timestamp missing
-                      "E,9000",                 // right ticks missing
-                      "E,",                     // nothing after the type
-                      "E,,,",                   // empty fields
-                      "E,abc,9000,1700000",     // left ticks not a number
-                      "E,9000,abc,1700000",     // right ticks not a number
-                      "E,9000,9000,abc"));      // timestamp not a number
+    ::testing::Values("",                    // empty line
+                      "garbage",             // no comma at all
+                      "X,1,2,3",             // unknown type
+                      "S,UNKNOWN",           // unknown status
+                      "e,9000,9000,1700000", // lower case
+                      "E,9000,9000",         // timestamp missing
+                      "E,9000",              // right ticks missing
+                      "E,",                  // nothing after the type
+                      "E,,,",                // empty fields
+                      "E,abc,9000,1700000",  // left ticks not a number
+                      "E,9000,abc,1700000",  // right ticks not a number
+                      "E,9000,9000,abc"));   // timestamp not a number
 
 // the serial driver hands over whatever bytes arrived, a line can be split
 // across two reads

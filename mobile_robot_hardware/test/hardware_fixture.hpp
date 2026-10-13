@@ -68,7 +68,8 @@ constexpr auto k_short_handshake_timeout = "200";
 // bound for waiting on something that should happen right away
 constexpr auto k_wait = 2s;
 
-inline hardware_interface::InterfaceInfo makeInterface(const std::string &name) {
+inline hardware_interface::InterfaceInfo
+makeInterface(const std::string &name) {
   hardware_interface::InterfaceInfo info{};
   info.name = name;
   info.data_type = "double";
@@ -151,7 +152,6 @@ inline std::optional<MotorCmd> parseMotorCmd(const std::string &line) {
   return cmd;
 }
 
-
 class MobileRobotHardwareTest : public ::testing::Test {
 protected:
   void SetUp() override {
@@ -172,10 +172,9 @@ protected:
 
   // runs what the resource manager does on loading a component: init() and
   // exporting the interfaces, which on_configure() looks up by name
-  CallbackReturn
-  init(const Params &params,
-       const std::vector<hardware_interface::ComponentInfo> &joints =
-           xacroJoints()) {
+  CallbackReturn init(const Params &params,
+                      const std::vector<hardware_interface::ComponentInfo>
+                          &joints = xacroJoints()) {
     hw_ = std::make_unique<MobileRobotHardware>();
     hardware_interface::HardwareComponentParams componentParams;
     componentParams.hardware_info = makeInfo(params, joints);
