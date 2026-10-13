@@ -75,16 +75,16 @@ TEST_P(MotorCmdMalformed, IsRejected) {
 
 INSTANTIATE_TEST_SUITE_P(
     MessagesTest, MotorCmdMalformed,
-    ::testing::Values("",          // empty
-                      "M",         // no values
-                      "M,1",       // right value missing
-                      "M,,2",      // empty field is skipped by strtok
-                      "M,a,2",     // not a number
-                      "M,1,2x",    // trailing garbage
-                      "M,1,2 ",    // trailing space, SerialChannel trims it
-                      "MM,1,2",    // prefix longer than one char
-                      "X,1,2",     // other message type
-                      "C,1,2"));   // config prefix
+    ::testing::Values("",        // empty
+                      "M",       // no values
+                      "M,1",     // right value missing
+                      "M,,2",    // empty field is skipped by strtok
+                      "M,a,2",   // not a number
+                      "M,1,2x",  // trailing garbage
+                      "M,1,2 ",  // trailing space, SerialChannel trims it
+                      "MM,1,2",  // prefix longer than one char
+                      "X,1,2",   // other message type
+                      "C,1,2")); // config prefix
 
 ///////////////////////////////////////////////////////////////////////////////
 // Event
@@ -139,8 +139,8 @@ TEST_F(MessagesTest, ImuDefaultIsIdentityOrientationAtRest) {
 
 TEST_F(MessagesTest, ImuFieldsAreInWireOrder) {
   // binary exact values, so the expected text doesn't depend on rounding
-  const msgs::ImuData imu(0.5f, -0.25f, 0.125f, 0.75f, 1.5f, -2.5f, 3.5f,
-                          -4.0f, 5.0f, -9.5f);
+  const msgs::ImuData imu(0.5f, -0.25f, 0.125f, 0.75f, 1.5f, -2.5f, 3.5f, -4.0f,
+                          5.0f, -9.5f);
   EXPECT_EQ(imu.serialize(), "I,0.500000,-0.250000,0.125000,0.750000,"
                              "1.500000,-2.500000,3.500000,"
                              "-4.000000,5.000000,-9.500000\n");

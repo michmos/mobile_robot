@@ -149,8 +149,7 @@ TEST_F(SerialChannelTest, PartialLineAtBufferLimitIsKept) {
   EXPECT_EQ(Serial.output(), "");
 
   receive("\n");
-  EXPECT_EQ(Serial.output(),
-            "L,Invalid line: " + std::string(256, 'x') + "\n");
+  EXPECT_EQ(Serial.output(), "L,Invalid line: " + std::string(256, 'x') + "\n");
 }
 
 TEST_F(SerialChannelTest, OverlongLineIsDroppedAndBufferRecovers) {
