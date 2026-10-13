@@ -73,8 +73,7 @@ private:
   static constexpr std::chrono::milliseconds k_config_retry_interval{500};
   // this has to cover the esp32 booting after the port was opened. Can be
   // overridden with the optional hardware parameter handshake_timeout_ms
-  static constexpr std::chrono::milliseconds k_default_handshake_timeout{
-      10000};
+  static constexpr std::chrono::milliseconds k_default_handshake_timeout{10000};
 
   // only touched by on_configure() and the realtime loop, which never run
   // concurrently. Replaced in on_init() if handshake_timeout_ms is set

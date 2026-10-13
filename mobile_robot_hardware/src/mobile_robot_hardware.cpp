@@ -214,8 +214,7 @@ void MobileRobotHardware::Config::set(
   payload_ = newConfig;
 }
 
-bool MobileRobotHardware::Config::tryGet(
-    protocol::ConfigPayload &out) const {
+bool MobileRobotHardware::Config::tryGet(protocol::ConfigPayload &out) const {
   std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
   if (!lock.owns_lock()) {
     return false;

@@ -121,9 +121,8 @@ TEST_F(MobileRobotHardwareTest, InitRejectsUnknownJointName) {
 }
 
 TEST_F(MobileRobotHardwareTest, InitRejectsPositionCommandInterface) {
-  EXPECT_EQ(init(xacroDefaults(),
-                 {makeJoint("left_wheel_joint", {"position"}),
-                  makeJoint("right_wheel_joint")}),
+  EXPECT_EQ(init(xacroDefaults(), {makeJoint("left_wheel_joint", {"position"}),
+                                   makeJoint("right_wheel_joint")}),
             CallbackReturn::ERROR);
 }
 
@@ -149,9 +148,9 @@ TEST_F(MobileRobotHardwareTest, ConfigureCompletesHandshake) {
 // the esp32 rejects every attempt, e.g. a line that keeps getting corrupted
 TEST_F(MobileRobotHardwareTest, ConfigureFailsWhenEspNacks) {
   fake_->setMode(FakeEsp32::Mode::NACK);
-  ASSERT_EQ(init(fakeParams({{"handshake_timeout_ms",
-                              k_short_handshake_timeout}})),
-            CallbackReturn::SUCCESS);
+  ASSERT_EQ(
+      init(fakeParams({{"handshake_timeout_ms", k_short_handshake_timeout}})),
+      CallbackReturn::SUCCESS);
 
   EXPECT_EQ(hw_->on_configure(k_unconfigured), CallbackReturn::ERROR);
   // it got as far as sending the config
@@ -161,9 +160,9 @@ TEST_F(MobileRobotHardwareTest, ConfigureFailsWhenEspNacks) {
 // e.g. the esp32 is unflashed or hangs
 TEST_F(MobileRobotHardwareTest, ConfigureFailsWhenEspIsSilent) {
   fake_->setMode(FakeEsp32::Mode::SILENT);
-  ASSERT_EQ(init(fakeParams({{"handshake_timeout_ms",
-                              k_short_handshake_timeout}})),
-            CallbackReturn::SUCCESS);
+  ASSERT_EQ(
+      init(fakeParams({{"handshake_timeout_ms", k_short_handshake_timeout}})),
+      CallbackReturn::SUCCESS);
 
   EXPECT_EQ(hw_->on_configure(k_unconfigured), CallbackReturn::ERROR);
   EXPECT_TRUE(fake_->waitForLine("C,", k_wait).has_value());
@@ -318,8 +317,8 @@ TEST_F(MobileRobotHardwareTest, InvalidLiveParameterIsRejected) {
       hw_->get_node()->set_parameter(rclcpp::Parameter("ff_slope_left", 0.0));
   EXPECT_FALSE(result.successful);
   // declared from the float in the payload, so not exactly 0.1
-  EXPECT_NEAR(hw_->get_node()->get_parameter("ff_slope_left").as_double(),
-              0.1, 1e-6);
+  EXPECT_NEAR(hw_->get_node()->get_parameter("ff_slope_left").as_double(), 0.1,
+              1e-6);
 
   // a handshake would send its config line from read(), before the write()
   ASSERT_EQ(hw_->read(now_, period_), return_type::OK);
@@ -334,9 +333,9 @@ TEST_F(MobileRobotHardwareTest, InvalidLiveParameterIsRejected) {
 
 // controller_manager then takes the component down (OVERVIEW.md)
 TEST_F(MobileRobotHardwareTest, FailedHandshakeWhileActiveMakesReadFail) {
-  ASSERT_EQ(init(fakeParams({{"handshake_timeout_ms",
-                              k_short_handshake_timeout}})),
-            CallbackReturn::SUCCESS);
+  ASSERT_EQ(
+      init(fakeParams({{"handshake_timeout_ms", k_short_handshake_timeout}})),
+      CallbackReturn::SUCCESS);
   configureAndActivate();
   fake_->setMode(FakeEsp32::Mode::SILENT);
   fake_->sendLine("S,SETUP");
@@ -344,7 +343,8 @@ TEST_F(MobileRobotHardwareTest, FailedHandshakeWhileActiveMakesReadFail) {
   // bounded by the handshake timeout plus a generous margin
   const auto deadline = std::chrono::steady_clock::now() + 5s;
   return_type ret = return_type::OK;
-  while (ret == return_type::OK && std::chrono::steady_clock::now() < deadline) {
+  while (ret == return_type::OK &&
+         std::chrono::steady_clock::now() < deadline) {
     ret = hw_->read(now_, period_);
     std::this_thread::yield();
   }
