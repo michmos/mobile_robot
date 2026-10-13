@@ -1,0 +1,31 @@
+# Build/test image for CI (.github/workflows/ci.yml, job `ros`) and for the agent
+# sandbox, which has no ROS 2 or arduino-cli installed (see ros2_ws/AGENTS.md).
+# The maintainer installs the dependencies natively and does not use this image.
+# Missing a dependency? Add it below - CI picks it up automatically.
+FROM osrf/ros:kilted-desktop
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ros-kilted-ros2-control \
+      ros-kilted-ros2-controllers \
+      ros-kilted-serial-driver \
+      ros-kilted-asio-cmake-module \
+      ros-kilted-xacro \
+      ros-kilted-urdfdom-py \
+      ros-kilted-ament-cmake-clang-format \
+      ros-kilted-twist-mux \
+      ros-kilted-foxglove-bridge \
+      python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# compile check for the esp32 firmware (esp32_firmware/), not used at runtime
+# core pinned to 2.0.17 to match the maintainer's local Arduino setup - the
+# esp32:esp32@3.x line dropped ledcSetup/ledcAttachPin, used by inc/L298.hpp
+RUN curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh \
+      | BINDIR=/usr/local/bin sh \
+ && arduino-cli config init \
+ && arduino-cli config add board_manager.additional_urls \
+      https://espressif.github.io/arduino-esp32/package_esp32_index.json \
+ && arduino-cli core update-index \
+ && arduino-cli core install esp32:esp32@2.0.17 \
+ && pip3 install --break-system-packages pyserial
+# ^ pyserial is needed by esptool_py's post-build size-check step, not for flashing.
