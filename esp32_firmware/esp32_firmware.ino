@@ -149,13 +149,18 @@ void sendSensorData(const EncoderSample& e) {
 //////////////////////////////////////////////////////////////////////////////////
 
 // adopt a newly received configuration into g_config
-// send ACK on valid new config
 // @return: true if a new configuration was applied
 bool updateConfig() {
-  msgs::Config received = g_sc.getConfig();
+  auto received = g_sc.getConfig();
 
-  // nothing to do unless the channel parsed a configuration we haven't seen -
-  if (!received.initialized || received.timestamp_ms == g_config.timestamp_ms) {
+  if (!received.initialized) {
+    return false;
+  }
+
+  // a re-send of the handshake already applied. The id alone isn't enough:
+  // a restarted pi can reuse the id the esp32 last applied, with other values
+  if (g_config.initialized && received.handshake_id == g_config.handshake_id &&
+      protocol::samePayload(received, g_config)) {
     return false;
   }
 
@@ -172,47 +177,38 @@ bool updateConfig() {
   g_config = received;
 
   g_sc.writeln(msgs::Log("New configuration received"));
-  g_sc.writeln(msgs::Event(msgs::Event::ACK));
   return true;
 }
 
-// wait for the pi to answer the SETUP event with a configuration
-// @param timeout_ms: how long to keep trying before giving up
-// @return: true if a configuration was received in time
-bool waitForConfig(unsigned long timeout_ms) {
-  unsigned long start_ms = millis();
-
-  while (millis() - start_ms < timeout_ms) {
-    g_sc.read();
-    if (updateConfig()) {
-      return true;
+// sends SETUP every k_setup_interval_ms until a valid configuration is
+// received and applied, the serial port is read in between
+void awaitConfig() {
+  // the pi re-sends the config on its own, SETUP only has to reach it once
+  const unsigned long k_setup_interval_ms = 500;
+  unsigned long last_setup_ms = millis() - k_setup_interval_ms; // send now
+  do {
+    if (millis() - last_setup_ms >= k_setup_interval_ms) {
+      g_sc.writeln(msgs::Event(msgs::Event::SETUP));
+      last_setup_ms = millis();
     }
+    g_sc.read();
     delay(10);
-  }
-  return false;
-}
-
-void setup() {
-  Serial.begin(115200);
-  // send setup message for hardware plugin to resend configurations such as PI gains
-  g_sc.writeln(msgs::Event(msgs::Event::SETUP));
-
-  g_motorDriver.setup();
-  g_encoder1.setup();
-  g_encoder2.setup();
-
-  // never block forever on the pi - falling back to the compiled-in defaults
-  const unsigned long k_config_timeout_ms = 5000;
-  if (!waitForConfig(k_config_timeout_ms)) {
-    g_sc.writeln(msgs::Log("No configuration received within " + std::to_string(k_config_timeout_ms) + " ms, continuing with defaults"));
-  }
-
-  g_motorController.configure(g_config.min_duty_left, g_config.min_duty_right, g_config.slope_left, g_config.slope_right, g_config.kp, g_config.ki, g_config.integral_limit);
+  } while (!updateConfig());
 }
 
 //////////////////////////////////////////////////////////////////////////////////
 // Main
 //////////////////////////////////////////////////////////////////////////////////
+
+void setup() {
+  Serial.begin(115200);
+  g_motorDriver.setup();
+  g_encoder1.setup();
+  g_encoder2.setup();
+  g_motorDriver.brake();
+
+  awaitConfig();
+}
 
 // returns true when next has been reached and updates next to the next time to run
 // otherwise just returns false

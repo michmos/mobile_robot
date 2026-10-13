@@ -18,6 +18,7 @@ find_package(serial_driver REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_hardware.cpp
+  src/wire_protocol.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -83,6 +84,25 @@ if(BUILD_TESTING)
   # a copyright and license is added to all source files
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_handshake test/test_handshake.cpp)
+  target_include_directories(test_handshake PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+  )
+
+  ament_add_gtest(test_wire_protocol
+    test/test_wire_protocol.cpp
+    src/wire_protocol.cpp
+  )
+  # the round trip tests parse with the firmware's own msgs::Config, which
+  # only needs millis() from the Arduino core
+  target_include_directories(test_wire_protocol PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
 endif()
 
 ament_package()

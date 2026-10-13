@@ -1,10 +1,12 @@
 #ifndef MOBILE_ROBOT_HARDWARE_HPP
 #define MOBILE_ROBOT_HARDWARE_HPP
 
+#include "mobile_robot_hardware/handshake.hpp"
 #include <hardware_interface/handle.hpp>
 #include <hardware_interface/system_interface.hpp>
 #include <hardware_interface/types/hardware_component_interface_params.hpp>
 #include <hardware_interface/types/hardware_interface_return_values.hpp>
+
 #include <io_context/io_context.hpp>
 #include <rcl_interfaces/msg/set_parameters_result.hpp>
 #include <rclcpp/parameter.hpp>
@@ -14,6 +16,7 @@
 // shared with the firmware, the include path points at esp32_firmware/
 #include "inc/ConfigPayload.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -51,17 +54,37 @@ private:
   std::string serialPort_;
   uint32_t baudRate_ = 0;
 
-  // wraps payload and mutex for safe read, write operations
+  // wraps payload and mutex for safe read, write operations. Shared with the
+  // parameter callback thread, the realtime loop only uses tryGet()
   class Config {
   public:
     protocol::ConfigPayload get() const;
     void set(const protocol::ConfigPayload &newConfig);
-    std::string serialize() const;
+    // non-blocking get for the realtime loop
+    // @return: false if the lock is held, `out` is left untouched then
+    bool tryGet(protocol::ConfigPayload &out) const;
 
   private:
     protocol::ConfigPayload payload_;
     mutable std::mutex mutex_;
   } config_;
+
+  // interval between re-sends of unacknowledged config
+  static constexpr std::chrono::milliseconds k_config_retry_interval{500};
+  // this has to cover the esp32 booting after the port was opened
+  static constexpr std::chrono::milliseconds k_handshake_timeout{10000};
+
+  // only touched by on_configure() and the realtime loop, which never run
+  // concurrently
+  Handshake handshake_{k_config_retry_interval, k_handshake_timeout};
+
+  // snapshot of config_ taken when the running handshake started. Every
+  // re-send of one handshake carries the same values, so an ACK for its id
+  // means the esp32 runs exactly these. Same threads as handshake_
+  protocol::ConfigPayload handshakePayload_;
+
+  // set by the parameter callback, which runs on another thread than read()
+  std::atomic<bool> configChanged_{false};
 
   // keeps the add_on_set_parameters_callback registration alive
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
@@ -152,28 +175,42 @@ private:
   // @param timeout: time to wait for '\n'
   bool readLine_(std::string &line, std::chrono::milliseconds timeout);
 
-  // reads lines, discarding any that don't satisfy `matches`, until one does
-  // or `timeout` elapses
-  template <typename Predicate>
-  std::optional<std::string> readLineUntil_(std::chrono::milliseconds timeout,
-                                            Predicate matches);
+  // blocks until a complete line is buffered or `deadline` has passed
+  // @param lock: holds serial_.rxMutex
+  // @return: true if a complete line is buffered
+  bool waitForLine_(std::unique_lock<std::mutex> &lock,
+                    Handshake::Clock::time_point deadline);
 
-  // esp32 handshake: wait for its SETUP event, send config_, wait for ACK/NACK
-  // @throws std::runtime_error naming which step failed
-  void performHandshake_(std::chrono::milliseconds setupTimeout,
-                         std::chrono::milliseconds ackTimeout);
+  // starts a handshake that sends `payload`
+  void startHandshake_(const protocol::ConfigPayload &payload);
+
+  // starts a handshake with config_ and blocks until the esp32 acknowledged it
+  // @throws std::runtime_error with the reason if the handshake failed
+  void awaitHandshake_();
+
+  // sends handshakePayload_ with the id of the running handshake
+  // errors are logged, the retry or the deadline of the handshake handle them
+  void sendConfig_();
+
+  // sends the config if the running handshake is due for a (re-)send
+  void serviceHandshake_();
 
   // serialize and send an "M,..." velocity command to the esp32
   // @throws std::runtime_error / asio exceptions on a send failure
   void sendMotorCmd_(float leftVelCmd, float rightVelCmd);
 
-  // handles a SETUP event seen outside on_configure(), i.e. the esp32
-  // restarted while active: resends config_ (best-effort, non-blocking) and
-  // marks the tick offsets for recalculation on the next encoder sample
-  void handleRestart_();
+  // handles a SETUP event: the esp32 is unconfigured, e.g. it restarted. Marks
+  // the tick offsets for recalculation on the next encoder sample and starts a
+  // handshake unless one is running
+  void handleSetup_();
 
-  // handles all buffered lines (logs, SETUP, ACK, NACK). Of the encoder
-  // reports received since the last SETUP event, only the newest is processed
+  // forwards an "S,ACK,..." or "S,NACK,..." line to the handshake, warns
+  // about one without a valid handshake id
+  void handleHandshakeReply_(const std::string &line);
+
+  // handles all buffered lines (logs, SETUP, ACK, NACK, encoder reports). Of
+  // the encoder reports received since the last SETUP event, only the newest is
+  // processed
   void processNewLines_();
 
   // parses an encoder report and updates the position and velocity states
@@ -185,8 +222,8 @@ private:
   void declareTunableParams_();
 
   // callback for parameter changes:
-  // validates new paraemeters and if correct, updates config_ and pushes
-  // it to the esp32 (best-effort, non-blocking)
+  // validates new paraemeters and if correct, updates config_ and flags it
+  // for read() to push to the esp32
   rcl_interfaces::msg::SetParametersResult
   onParamsSet_(const std::vector<rclcpp::Parameter> &parameters);
 };
