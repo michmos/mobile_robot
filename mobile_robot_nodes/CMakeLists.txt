@@ -26,7 +26,15 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 
+if(BUILD_TESTING)
+  # Linters (ament_lint_auto) are wired up separately in #5.
+  find_package(ament_cmake_pytest REQUIRED)
 
-
+  # APPEND_ENV lets the tests import the `mobile_robot` module from the
+  # source tree when the install space isn't sourced.
+  ament_add_pytest_test(test_urdf_kinematics test/test_urdf_kinematics.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
+endif()
 
 ament_package()
