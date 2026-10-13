@@ -27,10 +27,9 @@ std::string serializeConfig(const protocol::ConfigPayload &payload,
                             uint32_t handshakeId) {
   // invert_left/invert_right must go out as 0/1, not as true/false
   const std::string body =
-      "C," + std::to_string(handshakeId) + "," + formatFloat(payload.kp) +
-      "," + formatFloat(payload.ki) + "," +
-      formatFloat(payload.integral_limit) + "," +
-      formatFloat(payload.slope_left) + "," +
+      "C," + std::to_string(handshakeId) + "," + formatFloat(payload.kp) + "," +
+      formatFloat(payload.ki) + "," + formatFloat(payload.integral_limit) +
+      "," + formatFloat(payload.slope_left) + "," +
       formatFloat(payload.slope_right) + "," +
       formatFloat(payload.min_duty_left) + "," +
       formatFloat(payload.min_duty_right) + "," +
@@ -49,8 +48,7 @@ std::string serializeConfig(const protocol::ConfigPayload &payload,
 }
 
 std::string serializeMotorCmd(float leftVelCmd, float rightVelCmd) {
-  return "M," + formatFloat(leftVelCmd) + "," + formatFloat(rightVelCmd) +
-         "\n";
+  return "M," + formatFloat(leftVelCmd) + "," + formatFloat(rightVelCmd) + "\n";
 }
 
 void parseEncoderReport(const std::string &line, int32_t &leftTicks,
@@ -81,10 +79,9 @@ bool parseHandshakeReply(const std::string &line, const std::string &prefix,
     return false;
   }
   const size_t comma = line.find(',', prefix.size());
-  const std::string idStr =
-      line.substr(prefix.size(), comma == std::string::npos
-                                     ? std::string::npos
-                                     : comma - prefix.size());
+  const std::string idStr = line.substr(
+      prefix.size(),
+      comma == std::string::npos ? std::string::npos : comma - prefix.size());
   // std::stoul would accept a sign or leading whitespace and values that
   // alias a smaller id once cast to uint32_t
   if (idStr.empty()) {
