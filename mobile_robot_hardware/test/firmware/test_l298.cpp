@@ -293,16 +293,18 @@ INSTANTIATE_TEST_SUITE_P(
     Duties, L298OutOfRangeTest,
     ::testing::Values(-1e-6f, -1.0f, 1.0f + 1e-6f, 2.0f,
                       std::numeric_limits<float>::infinity(),
-                      -std::numeric_limits<float>::infinity()));
+                      -std::numeric_limits<float>::infinity(),
+                      std::numeric_limits<float>::quiet_NaN()));
 
 TEST_F(L298Test, NanDutyIsRejected) {
-  GTEST_SKIP() << "see #31";
-  // NaN passes the `< 0 || > 1` range check, and converting NaN to the
-  // uint32_t ledcWrite() takes is undefined behavior
+  // NaN would pass a `< 0 || > 1` range check (#31), and converting NaN to
+  // the uint32_t ledcWrite() takes is undefined behavior
   driver_.setup();
 
   EXPECT_EQ(driver_.setDuty1(std::numeric_limits<float>::quiet_NaN()), -1);
+  EXPECT_EQ(driver_.setDuty2(std::numeric_limits<float>::quiet_NaN()), -1);
   EXPECT_FALSE(arduino_stub::ledcChannel(k_channel1).written);
+  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel2).written);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
