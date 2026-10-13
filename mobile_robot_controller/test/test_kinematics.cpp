@@ -49,26 +49,30 @@ std::pair<double, double> arcWheelDeltas(double radius, double angle,
 // ---------------------------------------------------------------------------
 
 TEST(InverseKinematics, PureForwardTurnsBothWheelsEqually) {
-  const auto [left, right] = inverseKinematics(0.2, 0.0, k_separation, k_radius);
+  const auto [left, right] =
+      inverseKinematics(0.2, 0.0, k_separation, k_radius);
   EXPECT_NEAR(left, 4.0, k_eps);
   EXPECT_NEAR(right, 4.0, k_eps);
 }
 
 TEST(InverseKinematics, PureRotationTurnsWheelsOppositeAndEqual) {
   // turning left (positive z): right wheel forward, left wheel backward
-  const auto [left, right] = inverseKinematics(0.0, 1.0, k_separation, k_radius);
+  const auto [left, right] =
+      inverseKinematics(0.0, 1.0, k_separation, k_radius);
   EXPECT_NEAR(left, -2.0, k_eps);
   EXPECT_NEAR(right, 2.0, k_eps);
 }
 
 TEST(InverseKinematics, CombinedAddsRotationOnTopOfForward) {
-  const auto [left, right] = inverseKinematics(0.2, 1.0, k_separation, k_radius);
+  const auto [left, right] =
+      inverseKinematics(0.2, 1.0, k_separation, k_radius);
   EXPECT_NEAR(left, 2.0, k_eps);
   EXPECT_NEAR(right, 6.0, k_eps);
 }
 
 TEST(InverseKinematics, ZeroTwistGivesZeroWheelVelocity) {
-  const auto [left, right] = inverseKinematics(0.0, 0.0, k_separation, k_radius);
+  const auto [left, right] =
+      inverseKinematics(0.0, 0.0, k_separation, k_radius);
   EXPECT_NEAR(left, 0.0, k_eps);
   EXPECT_NEAR(right, 0.0, k_eps);
 }
@@ -109,14 +113,12 @@ TEST_P(KinematicsRoundTrip, WheelSpeedsMapBackToTwist) {
   EXPECT_NEAR(delta.heading / dt, angular, 1e-9);
 }
 
-INSTANTIATE_TEST_SUITE_P(Twists, KinematicsRoundTrip,
-                         ::testing::Values(std::make_pair(0.0, 0.0),
-                                           std::make_pair(0.3, 0.0),
-                                           std::make_pair(0.0, 2.0),
-                                           std::make_pair(0.2, 1.0),
-                                           std::make_pair(-0.2, 1.0),
-                                           std::make_pair(0.2, -1.0),
-                                           std::make_pair(-0.15, -0.7)));
+INSTANTIATE_TEST_SUITE_P(
+    Twists, KinematicsRoundTrip,
+    ::testing::Values(std::make_pair(0.0, 0.0), std::make_pair(0.3, 0.0),
+                      std::make_pair(0.0, 2.0), std::make_pair(0.2, 1.0),
+                      std::make_pair(-0.2, 1.0), std::make_pair(0.2, -1.0),
+                      std::make_pair(-0.15, -0.7)));
 
 // ---------------------------------------------------------------------------
 // odometry
@@ -185,8 +187,8 @@ TEST(Odometry, QuarterCircleMatchesClosedFormArc) {
   // cycles; closed form end pose is (R, R, pi/2)
   constexpr double arcRadius = 0.5;
   constexpr int steps = 100;
-  const auto [dLeft, dRight] = arcWheelDeltas(
-      arcRadius, (k_pi / 2.0) / steps, k_robotSeparation, k_robotRadius);
+  const auto [dLeft, dRight] = arcWheelDeltas(arcRadius, (k_pi / 2.0) / steps,
+                                              k_robotSeparation, k_robotRadius);
 
   Pose pose;
   for (int i = 0; i < steps; ++i) {
@@ -316,8 +318,8 @@ TEST(Covariance, AccumulatesOverOdometrySteps) {
   Pose pose;
   PoseVariance variance;
   for (int i = 0; i < 10; ++i) {
-    const BodyDelta delta = integrateOdometry(
-        pose, wheelDelta, wheelDelta, k_robotSeparation, k_robotRadius);
+    const BodyDelta delta = integrateOdometry(pose, wheelDelta, wheelDelta,
+                                              k_robotSeparation, k_robotRadius);
     growPoseVariance(variance, delta, k_positionVariancePerMeter,
                      k_yawVariancePerRadian);
   }

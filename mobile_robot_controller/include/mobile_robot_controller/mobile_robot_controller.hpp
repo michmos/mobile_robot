@@ -60,7 +60,8 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr cmdVelSub_;
   // written by cmdVelCallback_() (subscription thread), read by update()
   // (realtime thread)
-  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::TwistStamped>>
+  realtime_tools::RealtimeBuffer<
+      std::shared_ptr<geometry_msgs::msg::TwistStamped>>
       cmdVelBuffer_;
 
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odomPub_;
@@ -112,7 +113,8 @@ public:
 private:
   // subscription callback, stores msg into cmdVelBuffer_ for update() to pick
   // up
-  void cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg);
+  void
+  cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg);
 
   // forward kinematics: integrates pose_ and updates twist_
   // from the wheel position delta since the last call

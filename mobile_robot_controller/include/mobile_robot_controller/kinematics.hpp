@@ -33,8 +33,7 @@ struct BodyDelta {
 
 // inverse kinematics: body twist (m/s, rad/s) -> {leftWheelVel,
 // rightWheelVel} (rad/s)
-std::pair<double, double> inverseKinematics(double linearVel,
-                                            double angularVel,
+std::pair<double, double> inverseKinematics(double linearVel, double angularVel,
                                             double wheelSeparation,
                                             double wheelRadius);
 
@@ -56,10 +55,10 @@ geometry_msgs::msg::Quaternion yawToQuaternion(double yaw);
 // [x, y, z, roll, pitch, yaw], or [vx, vy, vz, wx, wy, wz] for twist)
 // from per-axis variances, leaving all covariances (off-diagonal entries)
 // at their default of zero
-void setDiagonalCovariance(std::array<double, 36> &covariance,
-                           double xVariance, double yVariance,
-                           double zVariance, double rollVariance,
-                           double pitchVariance, double yawVariance);
+void setDiagonalCovariance(std::array<double, 36> &covariance, double xVariance,
+                           double yVariance, double zVariance,
+                           double rollVariance, double pitchVariance,
+                           double yawVariance);
 
 } // namespace mobile_robot_controller
 
