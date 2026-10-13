@@ -6,20 +6,20 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cmath>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <limits>
 #include <stdexcept>
-#include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
-#include <string>
 
 using mobile_robot_hardware::parseEncoderReport;
 using mobile_robot_hardware::parseHandshakeReply;
-using mobile_robot_hardware::serializeMotorCmd;
 using mobile_robot_hardware::serializeConfig;
+using mobile_robot_hardware::serializeMotorCmd;
 
 namespace {
 
@@ -200,8 +200,8 @@ TEST(SerializeConfig, RoundTripDefaults) {
 TEST(SerializeConfig, RoundTripKeepsValuesNearLimits) {
   protocol::ConfigPayload sent = samplePayload();
   sent.kp = 1e-7f;
-  sent.slope_left = 1e-7f; // must stay > 0
-  sent.slope_right = std::nextafter(0.0f, 1.0f); // smallest positive float
+  sent.slope_left = 1e-7f;                         // must stay > 0
+  sent.slope_right = std::nextafter(0.0f, 1.0f);   // smallest positive float
   sent.min_duty_left = std::nextafter(1.0f, 0.0f); // must stay < 1
   sent.ticks_per_wheel_rev = 3.4e38f;
   ASSERT_EQ(protocol::validateConfig(sent), protocol::CONFIG_OK);
@@ -223,15 +223,13 @@ TEST(FirmwareConfigParser, RejectsMalformedLines) {
   const std::string withoutLastField = body.substr(0, body.rfind(','));
 
   for (const std::string &line : {
-           sign("C"),
-           sign("C,9"),
-           sign("X" + body.substr(1)),          // wrong message type
-           sign("C,0" + afterId),               // id 0 is reserved
-           sign("C,-1" + afterId),
-           sign("C,abc" + afterId),
-           sign("C,4294967296" + afterId),      // id above UINT32_MAX
-           sign(withoutLastField),              // missing field
-           sign(body + ",1"),                   // extra field
+           sign("C"), sign("C,9"),
+           sign("X" + body.substr(1)), // wrong message type
+           sign("C,0" + afterId),      // id 0 is reserved
+           sign("C,-1" + afterId), sign("C,abc" + afterId),
+           sign("C,4294967296" + afterId),              // id above UINT32_MAX
+           sign(withoutLastField),                      // missing field
+           sign(body + ",1"),                           // extra field
            sign(body.substr(0, body.size() - 1) + "2"), // invert_right not 0/1
        }) {
     msgs::Config parsed;
@@ -267,10 +265,10 @@ TEST(FirmwareConfigParser, RejectsCorruptedLines) {
            flippedDigit,
            droppedChar,
            badCrc,
-           std::string("C"),                      // no checksum at all
-           bodyOf(valid),                         // checksum missing
-           bodyOf(valid) + ",12",                 // too short
-           bodyOf(valid) + ",+12F",               // not hex
+           std::string("C"),        // no checksum at all
+           bodyOf(valid),           // checksum missing
+           bodyOf(valid) + ",12",   // too short
+           bodyOf(valid) + ",+12F", // not hex
            bodyOf(valid) + "," + valid.substr(valid.size() - 4) + "0",
        }) {
     msgs::Config parsed;
@@ -296,10 +294,10 @@ TEST(FirmwareConfigParser, AcceptsLowercaseChecksum) {
 
 TEST(SerializeMotorCmd, RoundTripThroughFirmwareParser) {
   // to_string's 6 fixed decimals would turn 1e-7 into 0 and cut 1.23456789
-  for (const auto &cmd : {std::make_pair(0.0f, 0.0f),
-                          std::make_pair(1.5f, -1.5f),
-                          std::make_pair(1e-7f, -1.23456789f),
-                          std::make_pair(-30.25f, 12345.678f)}) {
+  for (const auto &cmd :
+       {std::make_pair(0.0f, 0.0f), std::make_pair(1.5f, -1.5f),
+        std::make_pair(1e-7f, -1.23456789f),
+        std::make_pair(-30.25f, 12345.678f)}) {
     const std::string line = serializeMotorCmd(cmd.first, cmd.second);
     ASSERT_EQ(line.back(), '\n');
     msgs::MotorCmd received;
@@ -325,10 +323,9 @@ TEST(ParseEncoderReport, RoundTripFromFirmware) {
 TEST(ParseEncoderReport, RejectsMalformedLines) {
   int32_t left = 0, right = 0;
   uint32_t us = 0;
-  for (const std::string line : {"", "E", "E,1,2", "X,1,2,3", "E,a,2,3",
-                                 "E,1,,3", "E,1,2,"}) {
-    EXPECT_THROW(parseEncoderReport(line, left, right, us),
-                 std::runtime_error)
+  for (const std::string line :
+       {"", "E", "E,1,2", "X,1,2,3", "E,a,2,3", "E,1,,3", "E,1,2,"}) {
+    EXPECT_THROW(parseEncoderReport(line, left, right, us), std::runtime_error)
         << "'" << line << "'";
   }
 }
