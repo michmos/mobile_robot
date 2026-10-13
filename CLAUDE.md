@@ -16,6 +16,8 @@ Tests: read `TESTING.md` before writing any test (standards, faking hardware, de
 colcon test --packages-select mobile_robot_hardware mobile_robot && colcon test-result --verbose
 ```
 
+CI (`.github/workflows/ci.yml`) runs the same build and tests in `docker/Dockerfile.ros2`, plus the firmware compile and shellcheck; a missing test dependency goes into that Dockerfile.
+
 ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently through the Arduino IDE/arduino-cli with the `micro_ros_arduino` library installed; it is not part of the colcon build.
 
 ## Code Conventions
