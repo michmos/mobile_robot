@@ -103,6 +103,14 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
+
+  # host tests for the hardware independent firmware code in esp32_firmware/inc/,
+  # the Arduino core is replaced by the controllable fake in test/arduino_stub
+  ament_add_gtest(test_arduino_stub test/firmware/test_arduino_stub.cpp)
+  target_include_directories(test_arduino_stub PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
 endif()
 
 ament_package()
