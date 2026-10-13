@@ -302,7 +302,7 @@ def test_plugin_xml_matches_pluginlib_export(package):
 
 def test_mobile_robot_launch_has_expected_nodes(tmp_path, monkeypatch):
     description = load_launch_description('mobile_robot_launch.py',
-                                           tmp_path, monkeypatch)
+                                          tmp_path, monkeypatch)
 
     assert isinstance(description, LaunchDescription)
     assert sorted(nodes(description)) == sorted([
