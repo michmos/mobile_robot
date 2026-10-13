@@ -17,9 +17,9 @@ using hardware_interface::ComponentInfo;
 using hardware_interface::HW_IF_POSITION;
 using hardware_interface::HW_IF_VELOCITY;
 using hardware_interface::InterfaceInfo;
+using mobile_robot_hardware::detail::ParsedParams;
 using mobile_robot_hardware::detail::parseParam;
 using mobile_robot_hardware::detail::parseParams;
-using mobile_robot_hardware::detail::ParsedParams;
 using mobile_robot_hardware::detail::ticksToRad;
 using mobile_robot_hardware::detail::validateJoints;
 
@@ -145,14 +145,12 @@ TEST(ParseParam, NegativeUnsignedThrows) {
 TEST(ParseParam, AboveIntegerMaxThrows) {
   EXPECT_THROW(parseParam<uint32_t>({{"p", "4294967296"}}, "p"),
                std::runtime_error);
-  EXPECT_THROW(parseParam<uint16_t>({{"p", "65536"}}, "p"),
-               std::runtime_error);
+  EXPECT_THROW(parseParam<uint16_t>({{"p", "65536"}}, "p"), std::runtime_error);
 }
 
 // "200.5" for control_rate_hz must not silently run the loop at 200 Hz
 TEST(ParseParam, FractionalIntegerThrows) {
-  EXPECT_THROW(parseParam<uint16_t>({{"p", "200.5"}}, "p"),
-               std::runtime_error);
+  EXPECT_THROW(parseParam<uint16_t>({{"p", "200.5"}}, "p"), std::runtime_error);
   EXPECT_THROW(parseParam<uint32_t>({{"p", "0.5"}}, "p"), std::runtime_error);
 }
 

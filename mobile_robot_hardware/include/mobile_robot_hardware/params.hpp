@@ -24,8 +24,9 @@ namespace mobile_robot_hardware::detail {
 // check that the ros2_control URDF declares the joints and interfaces
 // read()/write() assume
 // @throws std::runtime_error describing the first mismatch found
-void validateJoints(const std::vector<hardware_interface::ComponentInfo> &joints,
-                    const std::vector<std::string> &expectedJoints);
+void validateJoints(
+    const std::vector<hardware_interface::ComponentInfo> &joints,
+    const std::vector<std::string> &expectedJoints);
 
 struct ParsedParams {
   std::string serialPort;
@@ -77,8 +78,7 @@ T parseParam(const std::unordered_map<std::string, std::string> &params,
 // pid_/ff_ prefix for readability, the payload fields are named after the wire
 // format instead
 // @throws std::runtime_error naming the offending parameter
-ParsedParams
-parseParams(const std::unordered_map<std::string, std::string> &p);
+ParsedParams parseParams(const std::unordered_map<std::string, std::string> &p);
 
 double ticksToRad(int32_t ticks, float ticksPerWheelRev);
 
