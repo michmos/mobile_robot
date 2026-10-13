@@ -22,6 +22,7 @@ find_package(tf2 REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_controller.cpp
+  src/kinematics.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC

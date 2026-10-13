@@ -1,10 +1,9 @@
 #include "mobile_robot_controller/mobile_robot_controller.hpp"
+#include "mobile_robot_controller/kinematics.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
-#include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
-#include <cmath>
 #include <controller_interface/controller_interface_base.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <memory>
@@ -159,7 +158,9 @@ MobileRobotController::update(const rclcpp::Time &time,
 
   // write commands
   auto t = cmdVelBuffer_.readFromRT();
-  auto cmds = inverseKinematics_(t->get()->twist.linear.x, t->get()->twist.angular.z);
+  auto cmds = inverseKinematics(t->get()->twist.linear.x,
+                                t->get()->twist.angular.z, wheelSeparation_,
+                                wheelRadius_);
   if (!command_interfaces_[LEFT].set_value(cmds.first) ||
       !command_interfaces_[RIGHT].set_value(cmds.second)) {
     RCLCPP_ERROR(get_node()->get_logger(),
@@ -175,46 +176,23 @@ void MobileRobotController::cmdVelCallback_(
   cmdVelBuffer_.writeFromNonRT(msg);
 }
 
-std::pair<double, double>
-MobileRobotController::inverseKinematics_(double linearVel,
-                                          double angularVel) const {
-  // velocity difference rule for rigid bodies
-  double leftWheelSpeed = linearVel - angularVel * wheelSeparation_ / 2.0;
-  double rightWheelSpeed = linearVel + angularVel * wheelSeparation_ / 2.0;
-
-  // convert wheel linear speed (m/s) to wheel angular velocity (rad/s)
-  double leftWheelVel = leftWheelSpeed / wheelRadius_;
-  double rightWheelVel = rightWheelSpeed / wheelRadius_;
-
-  return {leftWheelVel, rightWheelVel};
-}
-
 void MobileRobotController::updateOdometry_(double leftJointPose,
                                             double rightJointPose,
                                             const rclcpp::Duration &period) {
   if (!lastJointPose_.outdated) {
-    double distanceLeft = (leftJointPose - lastJointPose_.left) * wheelRadius_;
-    double distanceRight =
-        (rightJointPose - lastJointPose_.right) * wheelRadius_;
-    double distanceCenter = (distanceLeft + distanceRight) / 2.0;
-    double deltaHeading = (distanceRight - distanceLeft) / wheelSeparation_;
-
-    // mid point approx to get new pose
-    double headingMid = pose_.heading + deltaHeading / 2.0;
-    pose_.x += distanceCenter * cos(headingMid);
-    pose_.y += distanceCenter * sin(headingMid);
-    pose_.heading += deltaHeading;
+    BodyDelta delta = integrateOdometry(
+        pose_, leftJointPose - lastJointPose_.left,
+        rightJointPose - lastJointPose_.right, wheelSeparation_, wheelRadius_);
 
     // increment pose variance by how far the robot actually moved this cycle
-    poseVariance_.position +=
-        variances_.positionPerMeter * std::fabs(distanceCenter);
-    poseVariance_.yaw += variances_.yawPerRadian * std::fabs(deltaHeading);
+    growPoseVariance(poseVariance_, delta, variances_.positionPerMeter,
+                     variances_.yawPerRadian);
 
     // get velocities - only valid if the period was non-zero
     double dt = period.seconds();
     if (dt > 0.0) {
-      twist_.linearVelocity = distanceCenter / dt;
-      twist_.angularVelocity = deltaHeading / dt;
+      twist_.linearVelocity = delta.distance / dt;
+      twist_.angularVelocity = delta.heading / dt;
     }
   }
 
@@ -230,15 +208,11 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   odomMsg.header.frame_id = odomFrameId_;
   odomMsg.child_frame_id = baseFrameId_;
 
-  tf2::Quaternion q;
-  q.setRPY(0.0, 0.0, pose_.heading);
+  const auto q = yawToQuaternion(pose_.heading);
 
   odomMsg.pose.pose.position.x = pose_.x;
   odomMsg.pose.pose.position.y = pose_.y;
-  odomMsg.pose.pose.orientation.x = 0.0;
-  odomMsg.pose.pose.orientation.y = 0.0;
-  odomMsg.pose.pose.orientation.z = q.z();
-  odomMsg.pose.pose.orientation.w = q.w();
+  odomMsg.pose.pose.orientation = q;
 
   odomMsg.twist.twist.linear.x = twist_.linearVelocity;
   odomMsg.twist.twist.angular.z = twist_.angularVelocity;
@@ -249,14 +223,14 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   // robot_localization) treat an exact 0 variance ambiguously
   constexpr double kNegligibleVariance = 1e-9;
 
-  setDiagonalCovariance_(odomMsg.pose.covariance, poseVariance_.position,
-                         poseVariance_.position, kNegligibleVariance,
-                         kNegligibleVariance, kNegligibleVariance,
-                         poseVariance_.yaw);
-  setDiagonalCovariance_(odomMsg.twist.covariance, variances_.linearVelocity,
-                         kNegligibleVariance, kNegligibleVariance,
-                         kNegligibleVariance, kNegligibleVariance,
-                         variances_.angularVelocity);
+  setDiagonalCovariance(odomMsg.pose.covariance, poseVariance_.position,
+                        poseVariance_.position, kNegligibleVariance,
+                        kNegligibleVariance, kNegligibleVariance,
+                        poseVariance_.yaw);
+  setDiagonalCovariance(odomMsg.twist.covariance, variances_.linearVelocity,
+                        kNegligibleVariance, kNegligibleVariance,
+                        kNegligibleVariance, kNegligibleVariance,
+                        variances_.angularVelocity);
 
   realtimeOdomPub_->try_publish(odomMsg);
 
@@ -268,25 +242,9 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   tfMsg.transforms[0].transform.translation.x = pose_.x;
   tfMsg.transforms[0].transform.translation.y = pose_.y;
   tfMsg.transforms[0].transform.translation.z = 0.0;
-  tfMsg.transforms[0].transform.rotation.x = 0.0;
-  tfMsg.transforms[0].transform.rotation.y = 0.0;
-  tfMsg.transforms[0].transform.rotation.z = q.z();
-  tfMsg.transforms[0].transform.rotation.w = q.w();
+  tfMsg.transforms[0].transform.rotation = q;
 
   realtimeTfPub_->try_publish(tfMsg);
-}
-
-void MobileRobotController::setDiagonalCovariance_(
-    std::array<double, 36> &covariance, double xVariance, double yVariance,
-    double zVariance, double rollVariance, double pitchVariance,
-    double yawVariance) {
-  // ! one dimenstional array !
-  covariance[0] = xVariance;      // (0, 0)
-  covariance[7] = yVariance;      // (1, 1)
-  covariance[14] = zVariance;     // (2, 2)
-  covariance[21] = rollVariance;  // (3, 3)
-  covariance[28] = pitchVariance; // (4, 4)
-  covariance[35] = yawVariance;   // (5, 5)
 }
 
 PLUGINLIB_EXPORT_CLASS(mobile_robot_controller::MobileRobotController,
