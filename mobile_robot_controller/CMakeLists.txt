@@ -22,6 +22,7 @@ find_package(tf2 REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_controller.cpp
+  src/kinematics.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -81,6 +82,11 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   include(${CMAKE_CURRENT_SOURCE_DIR}/../lint/lint.cmake)
   ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_kinematics test/test_kinematics.cpp)
+  target_link_libraries(test_kinematics ${PROJECT_NAME})
 endif()
 
 ament_package()
