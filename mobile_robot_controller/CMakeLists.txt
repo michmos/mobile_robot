@@ -22,6 +22,7 @@ find_package(tf2 REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_controller.cpp
+  src/kinematics.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -82,15 +83,34 @@ if(BUILD_TESTING)
   include(${CMAKE_CURRENT_SOURCE_DIR}/../lint/lint.cmake)
   ament_lint_auto_find_test_dependencies()
 
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_kinematics test/test_kinematics.cpp)
+  target_link_libraries(test_kinematics ${PROJECT_NAME})
+
+  find_package(ament_cmake_gmock REQUIRED)
   find_package(ament_cmake_ros REQUIRED)
+  find_package(controller_manager REQUIRED)
   find_package(lifecycle_msgs REQUIRED)
 
-  # creates ROS nodes and publishes on /cmd_vel: the isolated variant gives
-  # the test its own ROS domain limited to localhost, so a robot on the same
-  # network can never receive the commands
-  ament_add_ros_isolated_gtest(test_cmd_vel_timeout
-    test/test_cmd_vel_timeout.cpp
+  # these tests create ROS nodes and publish on /cmd_vel: the isolated variant
+  # gives each test its own ROS domain limited to localhost, so a robot on the
+  # same network can't receive the commands and outside traffic can't reach
+  # the tests
+  ament_add_ros_isolated_gmock(test_mobile_robot_controller test/test_mobile_robot_controller.cpp)
+  target_link_libraries(test_mobile_robot_controller
+    ${PROJECT_NAME}
+    ${lifecycle_msgs_TARGETS}
   )
+
+  # loads the plugin through pluginlib, so it needs the installed package
+  # (source the install space before running it)
+  ament_add_ros_isolated_gmock(test_load_mobile_robot_controller test/test_load_mobile_robot_controller.cpp)
+  target_link_libraries(test_load_mobile_robot_controller
+    controller_manager::controller_manager
+  )
+
+  ament_add_ros_isolated_gtest(test_cmd_vel_timeout test/test_cmd_vel_timeout.cpp)
   target_link_libraries(test_cmd_vel_timeout
     ${PROJECT_NAME}
     ${lifecycle_msgs_TARGETS}

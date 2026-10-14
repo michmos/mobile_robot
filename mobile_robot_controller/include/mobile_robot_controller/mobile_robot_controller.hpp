@@ -1,6 +1,8 @@
 #ifndef MOBILE_ROBOT_CONTROLLER_HPP
 #define MOBILE_ROBOT_CONTROLLER_HPP
 
+#include "mobile_robot_controller/kinematics.hpp"
+
 #include <controller_interface/controller_interface.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
@@ -41,17 +43,10 @@ private:
   } variances_;
 
   // dead-reckoned pose, integrated in updateOdometry_()
-  struct Pose {
-    double x = 0.0;
-    double y = 0.0;
-    double heading = 0.0;
-  } pose_;
+  Pose pose_;
 
   // accumulated pose variance - x and y share one value
-  struct PoseVariance {
-    double position = 0.0;
-    double yaw = 0.0;
-  } poseVariance_;
+  PoseVariance poseVariance_;
 
   struct Twist {
     double linearVelocity = 0.0;
@@ -134,10 +129,6 @@ private:
   void
   cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg);
 
-  // inverse kinematics: body twist -> {leftWheelVel, rightWheelVel} (rad/s)
-  std::pair<double, double> inverseKinematics_(double linearVel,
-                                               double angularVel) const;
-
   // forward kinematics: integrates pose_ and updates twist_
   // from the wheel position delta since the last call
   void updateOdometry_(double leftWheelPos, double rightWheelPos,
@@ -146,15 +137,6 @@ private:
   // publishes the current pose_ as nav_msgs/Odometry and the
   // odom -> base_link tf transform
   void publishOdometry_(const rclcpp::Time &time);
-
-  // fills the diagonal of a 6x6 row-major covariance array (ordered
-  // [x, y, z, roll, pitch, yaw], or [vx, vy, vz, wx, wy, wz] for twist)
-  // from per-axis variances, leaving all covariances (off-diagonal entries)
-  // at their default of zero
-  static void setDiagonalCovariance_(std::array<double, 36> &covariance,
-                                     double xVariance, double yVariance,
-                                     double zVariance, double rollVariance,
-                                     double pitchVariance, double yawVariance);
 };
 
 } // namespace mobile_robot_controller
