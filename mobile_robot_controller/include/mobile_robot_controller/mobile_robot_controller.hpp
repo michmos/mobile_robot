@@ -31,6 +31,10 @@ private:
   double wheelSeparation_ = 0.0;
   double wheelRadius_ = 0.0;
 
+  // commands older than this (seconds) are replaced by zero velocity in
+  // update(), read from ROS params in on_configure()
+  double cmdVelTimeout_ = 0.0;
+
   struct Variances {
     double positionPerMeter = 0.0;
     double yawPerRadian = 0.0;
@@ -63,6 +67,14 @@ private:
   realtime_tools::RealtimeBuffer<
       std::shared_ptr<geometry_msgs::msg::TwistStamped>>
       cmdVelBuffer_;
+
+  // last command update() has seen and the update() time it was first seen
+  // at - used as the command's receive time for the cmd_vel timeout, since
+  // header stamps can be 0 or come from another clock. Only touched by
+  // update()/on_activate() (realtime thread). Holding the shared_ptr keeps
+  // the message alive, so a new message can never reuse its address.
+  std::shared_ptr<geometry_msgs::msg::TwistStamped> lastCmdVel_;
+  rclcpp::Time lastCmdVelTime_;
 
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odomPub_;
   std::unique_ptr<realtime_tools::RealtimePublisher<nav_msgs::msg::Odometry>>
@@ -106,7 +118,8 @@ public:
 
   // realtime loop, called by the controller manager
   // - read wheel position state interfaces, update odometry
-  // - read last cmd_vel, write wheel velocity command interfaces
+  // - read last cmd_vel, write wheel velocity command interfaces (zero
+  //   velocity if the last cmd_vel is older than cmd_vel_timeout)
   controller_interface::return_type
   update(const rclcpp::Time &time, const rclcpp::Duration &period) override;
 

@@ -109,6 +109,12 @@ if(BUILD_TESTING)
   target_link_libraries(test_load_mobile_robot_controller
     controller_manager::controller_manager
   )
+
+  ament_add_ros_isolated_gtest(test_cmd_vel_timeout test/test_cmd_vel_timeout.cpp)
+  target_link_libraries(test_cmd_vel_timeout
+    ${PROJECT_NAME}
+    ${lifecycle_msgs_TARGETS}
+  )
 endif()
 
 ament_package()
