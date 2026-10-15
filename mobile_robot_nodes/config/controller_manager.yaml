@@ -25,6 +25,11 @@ mobile_robot_controller:
     # wheel_separation and wheel_radius come from the URDF, see
     # mobile_robot_launch.py
 
+    # seconds without a new cmd_vel after which the controller commands zero
+    # velocity, so the robot stops when the velocity source goes quiet
+    # (twist_mux stops forwarding a timed-out input instead of sending zero)
+    cmd_vel_timeout: 0.5
+
     # velocity variance ((m/s)^2 / (rad/s)^2), estimated from the hardware's
     # own encoder resolution and control rate
     linear_velocity_variance: 0.0003
