@@ -1,0 +1,25 @@
+diff --git a/src/xv_11_driver.cpp b/src/xv_11_driver.cpp
+index 5753980..355ea7e 100644
+--- a/src/xv_11_driver.cpp
++++ b/src/xv_11_driver.cpp
+@@ -76,16 +76,16 @@ int main(int argc, char * argv[])
+ 
+   auto node = rclcpp::Node::make_shared("xv11_laser");
+ 
+-  node->declare_parameter("port");
++  node->declare_parameter("port", XV11_PORT_DEFAULT);
+   auto port_param      = rclcpp::Parameter("port", XV11_PORT_DEFAULT);
+ 
+-  node->declare_parameter("baud_rate");
++  node->declare_parameter("baud_rate", XV11_BAUD_RATE_DEFAULT);
+   auto baud_rate_param = rclcpp::Parameter("baud_rate", XV11_BAUD_RATE_DEFAULT);
+ 
+-  node->declare_parameter("frame_id");
++  node->declare_parameter("frame_id", XV11_FRAME_ID_DEFAULT);
+   auto frame_id_param  = rclcpp::Parameter("frame_id", XV11_FRAME_ID_DEFAULT);
+ 
+-  node->declare_parameter("firmware_version");
++  node->declare_parameter("firmware_version", XV11_FIRMWARE_VERSION_DEFAULT);
+   auto firmware_param  = rclcpp::Parameter("firmware_version", XV11_FIRMWARE_VERSION_DEFAULT);
+     
+   node->get_parameter_or("port", port_param, port_param);
