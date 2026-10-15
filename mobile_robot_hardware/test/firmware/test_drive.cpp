@@ -1,10 +1,7 @@
-// host tests for the logic the firmware's loop() is built from: the periodic
-// scheduler, the tick -> velocity conversion, the config update and the motor
-// command watchdog. Compiled against test/arduino_stub/Arduino.h, whose clock
-// wraps at 32 bit like the esp32's
+// host tests for the firmware's Drive class in Drive.hpp: the config update and
+// the motor command watchdog in updateMotor(). Compiled against
+// test/arduino_stub/Arduino.h, whose clock wraps at 32 bit like the esp32's
 #include "inc/Drive.hpp"
-#include "inc/Scheduler.hpp"
-#include "inc/Velocity.hpp"
 
 #include <gtest/gtest.h>
 
@@ -14,142 +11,6 @@
 #include <string>
 
 namespace {
-
-///////////////////////////////////////////////////////////////////////////////
-// due()
-///////////////////////////////////////////////////////////////////////////////
-
-class SchedulerTest : public ::testing::Test {
-protected:
-  void SetUp() override { arduino_stub::reset(); }
-};
-
-TEST_F(SchedulerTest, DueNotBeforeNext) {
-  uint32_t next = 1000;
-
-  EXPECT_FALSE(due(999, next, 1000));
-  EXPECT_EQ(next, 1000u);
-}
-
-TEST_F(SchedulerTest, DueFiresAtNextAndAdvancesByPeriod) {
-  uint32_t next = 1000;
-
-  EXPECT_TRUE(due(1000, next, 1000));
-  EXPECT_EQ(next, 2000u);
-  // once per period, a second call at the same time must not fire again
-  EXPECT_FALSE(due(1000, next, 1000));
-}
-
-TEST_F(SchedulerTest, DueLateWithinOnePeriodKeepsThePhase) {
-  uint32_t next = 1000;
-
-  // a loop() pass that was a bit late must not shift the following runs,
-  // otherwise the control rate drifts below the configured one
-  EXPECT_TRUE(due(1300, next, 1000));
-  EXPECT_EQ(next, 2000u);
-}
-
-TEST_F(SchedulerTest, DueAfterLongStallFiresOnceAndDropsMissedRuns) {
-  uint32_t next = 1000;
-
-  // stalled for several periods (e.g. a blocking serial write). The missed
-  // control runs are not caught up in a burst: it fires once and the schedule
-  // restarts one period after now
-  EXPECT_TRUE(due(5500, next, 1000));
-  EXPECT_EQ(next, 6500u);
-  EXPECT_FALSE(due(5500, next, 1000));
-}
-
-TEST_F(SchedulerTest, DueStallOfExactlyOnePeriodCatchesUpOnce) {
-  uint32_t next = 1000;
-
-  // boundary of the catch-up rule: a delay of exactly one period is not
-  // "more than one period", so the missed run is caught up right away
-  EXPECT_TRUE(due(2000, next, 1000));
-  EXPECT_EQ(next, 2000u);
-  EXPECT_TRUE(due(2000, next, 1000));
-  EXPECT_EQ(next, 3000u);
-  EXPECT_FALSE(due(2000, next, 1000));
-}
-
-TEST_F(SchedulerTest, DueNextWrapsPastZero) {
-  // micros() wraps every ~71.6 min on the esp32, a robot running longer
-  // crosses it. Here next lands just behind the wrap
-  uint32_t next = 0xFFFFFE00u; // 2^32 - 512
-
-  EXPECT_TRUE(due(0xFFFFFE00u, next, 1000));
-  EXPECT_EQ(next, 488u);
-
-  // still before the wrap: an unsigned compare would think next has passed
-  EXPECT_FALSE(due(0xFFFFFF9Cu, next, 1000));
-  EXPECT_FALSE(due(487, next, 1000));
-  EXPECT_TRUE(due(488, next, 1000));
-  EXPECT_EQ(next, 1488u);
-}
-
-TEST_F(SchedulerTest, DueStallAcrossTheWrapFiresOnce) {
-  uint32_t next = 0xFFFFFF00u;
-
-  // now is 3256 us past next, with the wrap in between
-  EXPECT_TRUE(due(3000, next, 1000));
-  EXPECT_EQ(next, 4000u);
-}
-
-TEST_F(SchedulerTest, DueWithTheStubClockAcrossTheWrap) {
-  // the same pattern loop() uses: next derived from micros(), which wraps
-  arduino_stub::setMicros(0xFFFFFFFFULL - 299);
-  uint32_t next = micros();
-  ASSERT_TRUE(due(micros(), next, 500));
-
-  arduino_stub::advanceMicros(499);
-  EXPECT_FALSE(due(micros(), next, 500));
-  arduino_stub::advanceMicros(1);
-  ASSERT_LT(micros(), 500UL); // the clock really wrapped
-  EXPECT_TRUE(due(micros(), next, 500));
-}
-
-///////////////////////////////////////////////////////////////////////////////
-// ticksToRad() / getVelocity()
-///////////////////////////////////////////////////////////////////////////////
-
-constexpr float k_ticksPerRev = 480.0f;
-constexpr float k_twoPi = 2.0f * static_cast<float>(M_PI);
-constexpr float k_velTol = 1e-4f;
-
-TEST(Velocity, TicksToRadOneRevolution) {
-  EXPECT_NEAR(ticksToRad(480, k_ticksPerRev), k_twoPi, k_velTol);
-  EXPECT_NEAR(ticksToRad(-480, k_ticksPerRev), -k_twoPi, k_velTol);
-  EXPECT_NEAR(ticksToRad(0, k_ticksPerRev), 0.0f, k_velTol);
-}
-
-TEST(Velocity, FromTicksAndDt) {
-  // a tenth of a revolution in 100 ms is one revolution per second
-  EXPECT_NEAR(getVelocity(148, 100, 100000, k_ticksPerRev), k_twoPi, k_velTol);
-}
-
-TEST(Velocity, NegativeWhenTicksDecrease) {
-  EXPECT_NEAR(getVelocity(-148, -100, 100000, k_ticksPerRev), -k_twoPi,
-              k_velTol);
-}
-
-TEST(Velocity, ZeroWithoutTicks) {
-  EXPECT_NEAR(getVelocity(100, 100, 5000, k_ticksPerRev), 0.0f, k_velTol);
-}
-
-TEST(Velocity, ZeroWhenNoTimePassed) {
-  // dividing by dt == 0 gave inf/NaN, which the PI turns into full duty (#30)
-  const float vel = getVelocity(148, 100, 0, k_ticksPerRev);
-  EXPECT_TRUE(std::isfinite(vel));
-  EXPECT_NEAR(vel, 0.0f, k_velTol);
-  EXPECT_NEAR(getVelocity(100, 100, 0, k_ticksPerRev), 0.0f, k_velTol);
-}
-
-TEST(Velocity, SingleMicrosecondDt) {
-  // smallest dt, one tick: large but finite
-  const float vel = getVelocity(1, 0, 1, k_ticksPerRev);
-  EXPECT_TRUE(std::isfinite(vel));
-  EXPECT_NEAR(vel, k_twoPi / k_ticksPerRev * 1e6f, 1.0f);
-}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Drive: updateConfig() and the watchdog in updateMotor()
@@ -162,6 +23,8 @@ constexpr uint8_t k_enc1a = 18, k_enc1b = 19;
 constexpr uint8_t k_enc2a = 22, k_enc2b = 23;
 constexpr uint8_t k_pwmRes = 16;
 constexpr float k_dutyMax = 65535.0f;
+constexpr float k_ticksPerRev = 480.0f;
+constexpr float k_twoPi = 2.0f * static_cast<float>(M_PI);
 // ledc channels used by L298N
 constexpr uint8_t k_channelLeft = 1, k_channelRight = 2;
 
