@@ -1,6 +1,8 @@
 #ifndef MOBILE_ROBOT_CONTROLLER_HPP
 #define MOBILE_ROBOT_CONTROLLER_HPP
 
+#include "mobile_robot_controller/kinematics.hpp"
+
 #include <controller_interface/controller_interface.hpp>
 #include <geometry_msgs/msg/twist_stamped.hpp>
 #include <nav_msgs/msg/odometry.hpp>
@@ -29,6 +31,10 @@ private:
   double wheelSeparation_ = 0.0;
   double wheelRadius_ = 0.0;
 
+  // commands older than this (seconds) are replaced by zero velocity in
+  // update(), read from ROS params in on_configure()
+  double cmdVelTimeout_ = 0.0;
+
   struct Variances {
     double positionPerMeter = 0.0;
     double yawPerRadian = 0.0;
@@ -37,17 +43,10 @@ private:
   } variances_;
 
   // dead-reckoned pose, integrated in updateOdometry_()
-  struct Pose {
-    double x = 0.0;
-    double y = 0.0;
-    double heading = 0.0;
-  } pose_;
+  Pose pose_;
 
   // accumulated pose variance - x and y share one value
-  struct PoseVariance {
-    double position = 0.0;
-    double yaw = 0.0;
-  } poseVariance_;
+  PoseVariance poseVariance_;
 
   struct Twist {
     double linearVelocity = 0.0;
@@ -68,6 +67,14 @@ private:
   realtime_tools::RealtimeBuffer<
       std::shared_ptr<geometry_msgs::msg::TwistStamped>>
       cmdVelBuffer_;
+
+  // last command update() has seen and the update() time it was first seen
+  // at - used as the command's receive time for the cmd_vel timeout, since
+  // header stamps can be 0 or come from another clock. Only touched by
+  // update()/on_activate() (realtime thread). Holding the shared_ptr keeps
+  // the message alive, so a new message can never reuse its address.
+  std::shared_ptr<geometry_msgs::msg::TwistStamped> lastCmdVel_;
+  rclcpp::Time lastCmdVelTime_;
 
   std::shared_ptr<rclcpp::Publisher<nav_msgs::msg::Odometry>> odomPub_;
   std::unique_ptr<realtime_tools::RealtimePublisher<nav_msgs::msg::Odometry>>
@@ -111,7 +118,8 @@ public:
 
   // realtime loop, called by the controller manager
   // - read wheel position state interfaces, update odometry
-  // - read last cmd_vel, write wheel velocity command interfaces
+  // - read last cmd_vel, write wheel velocity command interfaces (zero
+  //   velocity if the last cmd_vel is older than cmd_vel_timeout)
   controller_interface::return_type
   update(const rclcpp::Time &time, const rclcpp::Duration &period) override;
 
@@ -121,10 +129,6 @@ private:
   void
   cmdVelCallback_(const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg);
 
-  // inverse kinematics: body twist -> {leftWheelVel, rightWheelVel} (rad/s)
-  std::pair<double, double> inverseKinematics_(double linearVel,
-                                               double angularVel) const;
-
   // forward kinematics: integrates pose_ and updates twist_
   // from the wheel position delta since the last call
   void updateOdometry_(double leftWheelPos, double rightWheelPos,
@@ -133,15 +137,6 @@ private:
   // publishes the current pose_ as nav_msgs/Odometry and the
   // odom -> base_link tf transform
   void publishOdometry_(const rclcpp::Time &time);
-
-  // fills the diagonal of a 6x6 row-major covariance array (ordered
-  // [x, y, z, roll, pitch, yaw], or [vx, vy, vz, wx, wy, wz] for twist)
-  // from per-axis variances, leaving all covariances (off-diagonal entries)
-  // at their default of zero
-  static void setDiagonalCovariance_(std::array<double, 36> &covariance,
-                                     double xVariance, double yVariance,
-                                     double zVariance, double rollVariance,
-                                     double pitchVariance, double yawVariance);
 };
 
 } // namespace mobile_robot_controller
