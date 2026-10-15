@@ -259,6 +259,15 @@ protected:
     GetParam().change(p);
     return p;
   }
+
+  // the line carries "nan"/"inf" for a non-finite float
+  static bool allFloatsFinite(const protocol::ConfigPayload &p) {
+    return std::isfinite(p.kp) && std::isfinite(p.ki) &&
+           std::isfinite(p.integral_limit) && std::isfinite(p.slope_left) &&
+           std::isfinite(p.slope_right) && std::isfinite(p.min_duty_left) &&
+           std::isfinite(p.min_duty_right) &&
+           std::isfinite(p.ticks_per_wheel_rev);
+  }
 };
 
 TEST_P(ConfigBoundary, ValidateConfigNamesField) {
@@ -268,7 +277,9 @@ TEST_P(ConfigBoundary, ValidateConfigNamesField) {
 }
 
 // the esp32 reaches the same verdict on the line the pi sends, and its reply
-// names the field in a form the pi parses
+// names the field in a form the pi parses. A non-finite float is already
+// rejected by the firmware's parseFloat_ (#47), before the range check, so the
+// esp32 NACKs it as "malformed" instead of naming the field
 TEST_P(ConfigBoundary, FirmwareReplyNamesFieldToPi) {
   const uint32_t handshakeId = 31;
   msgs::Config received;
@@ -285,7 +296,8 @@ TEST_P(ConfigBoundary, FirmwareReplyNamesFieldToPi) {
   } else {
     EXPECT_FALSE(received.initialized);
     ASSERT_TRUE(parseHandshakeReply(reply, k_nack_prefix, id, detail)) << reply;
-    EXPECT_EQ(detail, GetParam().expectedName);
+    EXPECT_EQ(detail, allFloatsFinite(payload()) ? GetParam().expectedName
+                                                 : "malformed");
   }
   EXPECT_EQ(id, handshakeId);
 }
