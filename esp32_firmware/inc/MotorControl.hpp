@@ -24,7 +24,9 @@ private:
   }
 
   float feedforward_(float cmdVel, float slope, float min_duty) {
-    if (cmdVel == 0.0f) {
+    // a command that isn't a finite number stops the wheel. clamp_() would
+    // turn NaN into full duty, every comparison with it is false
+    if (cmdVel == 0.0f || !std::isfinite(cmdVel)) {
       return 0.0f;
     }
     return clamp_(copysignf(min_duty + slope * fabsf(cmdVel), cmdVel));
@@ -38,7 +40,10 @@ private:
     // a stop command should hold still, not servo to exactly zero off a
     // velocity reading that's mostly quantization noise at low tick counts -
     // fighting that noise is what made the wheel judder/reverse near zero
-    if (cmdVel == 0.0f) {
+    // same for a command or a measured velocity that isn't a finite number
+    // (e.g. dt == 0 in the velocity estimate): stop instead of saturating,
+    // and don't let it into the integral
+    if (cmdVel == 0.0f || !std::isfinite(cmdVel) || !std::isfinite(currVel)) {
       *integral_term = 0.0f;
       return 0.0f;
     }
