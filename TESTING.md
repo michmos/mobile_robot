@@ -55,7 +55,7 @@ Prefer the lowest level that can catch the bug. Most tests should be unit tests.
 
 | Real thing | Fake |
 |---|---|
-| ESP32 serial link (hardware plugin) | **pty pair** (`openpty()`): pass the slave path (`/dev/pts/N`) as the `serial_port` hardware parameter and let a test thread on the master side play the ESP32 (send `S,SETUP`, answer `C,...` with `S,ACK,<id>`/`S,NACK,...`, stream `E,...` lines, read `M,...` lines). The plugin's production serial code stays unchanged. |
+| ESP32 serial link (hardware plugin) | **pty pair** (`openpty()`): pass the slave path (`/dev/pts/N`) as the `serial_port` hardware parameter and let a test thread on the master side play the ESP32 (send `S,SETUP`, answer `C,...` with `S,ACK,<id>`/`S,NACK,...`, stream `E,...` lines, read `M,...` lines). The plugin's production serial code stays unchanged. Reuse `mobile_robot_hardware/test/fake_esp32.hpp` (the fake esp32 used by the plugin's lifecycle component tests). |
 | ros2_control hardware for launch/integration tests | `mock_components/GenericSystem`, selected with the `use_mock_hardware` xacro/launch argument |
 | Controller's hardware | Hand-made `hardware_interface::CommandInterface` / `StateInterface` objects (the pattern used by ros2_controllers' `diff_drive_controller` tests) |
 | Arduino core (`millis`, `micros`, `Serial`, GPIO, LEDC, interrupts) | `mobile_robot_hardware/test/arduino_stub/Arduino.h`: a controllable clock, a fake `Serial` with an input queue and output capture, and recorders for GPIO/LEDC calls. Extend this stub instead of creating a second one. |

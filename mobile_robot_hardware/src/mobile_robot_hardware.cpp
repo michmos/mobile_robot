@@ -9,6 +9,7 @@
 #include <cmath>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
@@ -68,6 +69,8 @@ void validateJoints(const std::vector<ComponentInfo> &joints,
 struct ParsedParams {
   std::string serialPort;
   uint32_t baudRate = 0;
+  // unset if the optional handshake_timeout_ms parameter is missing
+  std::optional<std::chrono::milliseconds> handshakeTimeout;
   protocol::ConfigPayload config;
 };
 
@@ -118,6 +121,17 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
   parsed.baudRate = parseParam<uint32_t>(p, "baud_rate");
   if (parsed.baudRate == 0) {
     throw std::runtime_error("hardware parameter 'baud_rate' must be > 0");
+  }
+
+  // optional: the default covers the esp32 booting, the tests shorten it so a
+  // failing handshake doesn't take seconds
+  if (p.count("handshake_timeout_ms") != 0) {
+    const uint32_t timeoutMs = parseParam<uint32_t>(p, "handshake_timeout_ms");
+    if (timeoutMs == 0) {
+      throw std::runtime_error(
+          "hardware parameter 'handshake_timeout_ms' must be > 0");
+    }
+    parsed.handshakeTimeout = std::chrono::milliseconds(timeoutMs);
   }
 
   parsed.config.kp = parseParam<float>(p, "pid_kp");
@@ -173,6 +187,9 @@ MobileRobotHardware::on_init(const HardwareComponentInterfaceParams &params) {
     ParsedParams parsed = parseParams(info_.hardware_parameters);
     serialPort_ = std::move(parsed.serialPort);
     baudRate_ = parsed.baudRate;
+    handshake_ = Handshake(
+        k_config_retry_interval,
+        parsed.handshakeTimeout.value_or(k_default_handshake_timeout));
     config_.set(parsed.config);
   } catch (const std::runtime_error &e) {
     RCLCPP_ERROR(this->get_logger(), "%s", e.what());
