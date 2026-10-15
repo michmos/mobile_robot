@@ -4,6 +4,8 @@
 #include "inc/SerialChannel.hpp"
 #include "inc/Messages.hpp"
 #include "inc/MotorControl.hpp"
+#include "inc/Drive.hpp"
+#include "inc/Scheduler.hpp"
 
 //////////////////////////////////////////////////////////////////////////////////
 // Pins
@@ -26,14 +28,6 @@
 #define ENCODER2_SIGNAL2 23
 
 //////////////////////////////////////////////////////////////////////////////////
-// Types
-//////////////////////////////////////////////////////////////////////////////////
-struct EncoderSample {
-  int32_t left_ticks = 0;
-  int32_t right_ticks = 0;
-  unsigned long us = 0;
-};
-//////////////////////////////////////////////////////////////////////////////////
 // Globals
 //////////////////////////////////////////////////////////////////////////////////
 
@@ -43,81 +37,13 @@ const uint8_t k_pwm_res = 16;
 // locks
 portMUX_TYPE g_encoder_mux = portMUX_INITIALIZER_UNLOCKED;
 
-bool g_wasStopped = true;  //indicates if the motors were stopped in the last control
-                           //loop iteration
-
-msgs::Config g_config;
 SerialChannel g_sc;
 L298N g_motorDriver(ENA_PIN, IN1_PIN, IN2_PIN, ENB_PIN, IN3_PIN, IN4_PIN, k_pwm_res);
 Encoder g_encoder1(ENCODER1_SIGNAL1, ENCODER1_SIGNAL2);
 Encoder g_encoder2(ENCODER2_SIGNAL1, ENCODER2_SIGNAL2);
 MotorControl g_motorController;
-
-//////////////////////////////////////////////////////////////////////////////////
-// Control Motor
-//////////////////////////////////////////////////////////////////////////////////
-
-float ticksToRad(int32_t ticks) {
-  return (ticks * 2.0f * M_PI) / g_config.ticks_per_wheel_rev;
-}
-
-// returns the velocity in radians per second
-float getVelocity(int32_t ticksNow, int32_t ticksLast, unsigned long dt_us) {
-  return ticksToRad(ticksNow - ticksLast) / (dt_us * 1e-6f);
-}
-
-// update the motor driver with the latest command from the serial channel converted
-// to a duty cycle using the FF + PI controller
-void updateMotor(const EncoderSample& e) {
-  // compute current velocities
-  static EncoderSample lastSample;
-
-  msgs::MotorCmd cmd = g_sc.getMotorCmd();
-  if (millis() - cmd.timestamp_ms > g_config.watchdog_timeout_ms) {
-    g_motorDriver.brake();
-    g_motorController.reset();
-    g_wasStopped = true;
-    g_sc.writeln(msgs::Log("No new motor command received, stopping motors"));
-    return;
-  }
-
-  // ---- get new duty ----
-  float dutyLeft, dutyRight;
-  if (g_wasStopped) {
-    // ff without pi to avoid calculating velocity from stale data
-    dutyLeft = g_motorController.feedforwardLeft(cmd.left_vel_cmd);
-    dutyRight = g_motorController.feedforwardRight(cmd.right_vel_cmd);
-
-  } else {
-    // get current velocity
-    float velLeft = getVelocity(e.left_ticks, lastSample.left_ticks, e.us - lastSample.us);
-    float velRight = getVelocity(e.right_ticks, lastSample.right_ticks, e.us - lastSample.us);
-    float dt_s = (e.us - lastSample.us) * 1e-6f;
-
-    dutyLeft = g_motorController.computeDutyLeft(cmd.left_vel_cmd, velLeft, dt_s);
-    dutyRight = g_motorController.computeDutyRight(cmd.right_vel_cmd, velRight, dt_s);
-  }
-  g_wasStopped = false;
-  lastSample = e;
-
-  // ---- update duty on motor driver ----
-  bool motorError = false;
-  if (cmd.left_vel_cmd == 0.0f) {
-    g_motorDriver.brake1();
-  } else {
-    g_motorDriver.updateDir1((dutyLeft >= 0.0f) ? FORWARDS : BACKWARDS);
-    motorError |= (g_motorDriver.setDuty1(fabsf(dutyLeft)) == -1);
-  }
-  if (cmd.right_vel_cmd == 0.0f) {
-    g_motorDriver.brake2();
-  } else {
-    g_motorDriver.updateDir2((dutyRight >= 0.0f) ? FORWARDS : BACKWARDS);
-    motorError |= (g_motorDriver.setDuty2(fabsf(dutyRight)) == -1);
-  }
-  if (motorError) {
-    g_sc.writeln(msgs::Log("Could not update motor duty cycles"));
-  }
-}
+// config update, command watchdog and FF + PI control, see inc/Drive.hpp
+Drive g_drive(g_sc, g_motorDriver, g_encoder1, g_encoder2, g_motorController);
 
 //////////////////////////////////////////////////////////////////////////////////
 // Sensor data
@@ -148,38 +74,6 @@ void sendSensorData(const EncoderSample& e) {
 // Configure
 //////////////////////////////////////////////////////////////////////////////////
 
-// adopt a newly received configuration into g_config
-// @return: true if a new configuration was applied
-bool updateConfig() {
-  auto received = g_sc.getConfig();
-
-  if (!received.initialized) {
-    return false;
-  }
-
-  // a re-send of the handshake already applied. The id alone isn't enough:
-  // a restarted pi can reuse the id the esp32 last applied, with other values
-  if (g_config.initialized && received.handshake_id == g_config.handshake_id &&
-      protocol::samePayload(received, g_config)) {
-    return false;
-  }
-
-  g_motorDriver.brake();
-  g_wasStopped = true;
-
-  // update component configs
-  g_motorController.configure(received.min_duty_left, received.min_duty_right, received.slope_left, received.slope_right, received.kp, received.ki, received.integral_limit);
-  g_motorDriver.setInverted1(received.invert_left);
-  g_motorDriver.setInverted2(received.invert_right);
-  g_encoder1.setInverted(received.invert_left);
-  g_encoder2.setInverted(received.invert_right);
-
-  g_config = received;
-
-  g_sc.writeln(msgs::Log("New configuration received"));
-  return true;
-}
-
 // sends SETUP every k_setup_interval_ms until a valid configuration is
 // received and applied, the serial port is read in between
 void awaitConfig() {
@@ -193,7 +87,7 @@ void awaitConfig() {
     }
     g_sc.read();
     delay(10);
-  } while (!updateConfig());
+  } while (!g_drive.updateConfig());
 }
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -210,38 +104,26 @@ void setup() {
   awaitConfig();
 }
 
-// returns true when next has been reached and updates next to the next time to run
-// otherwise just returns false
-bool due(unsigned long now, unsigned long& next, unsigned long period_us) {
-  if ((long)(now - next) < 0) {
-    return false;
-  }
-
-  // update next by period_us and reset it in case more than one period has passed
-  next = (now - next > period_us) ? now + period_us : next + period_us;
-  return true;
-}
-
 void loop() {
-  static unsigned long next_report_us = micros();
-  static unsigned long next_control_us = next_report_us;
+  static uint32_t next_report_us = micros();
+  static uint32_t next_control_us = next_report_us;
   static EncoderSample es;
 
   g_sc.read();
 
-  if (updateConfig()) {  // reset timers since frequencies might have changed
+  if (g_drive.updateConfig()) {  // reset timers since frequencies might have changed
     next_report_us = micros();
     next_control_us = next_report_us;
   }
 
-  unsigned long now = micros();
-  bool control_due = due(now, next_control_us, 1000000UL / g_config.control_rate_hz);
-  bool report_due = due(now, next_report_us, 1000000UL / g_config.report_rate_hz);
+  uint32_t now = micros();
+  bool control_due = due(now, next_control_us, 1000000UL / g_drive.config().control_rate_hz);
+  bool report_due = due(now, next_report_us, 1000000UL / g_drive.config().report_rate_hz);
 
   if (control_due || report_due) {
     es = sampleEncoders();
     if (control_due) {
-      updateMotor(es);
+      g_drive.updateMotor(es);
     }
     if (report_due) {
       sendSensorData(es);

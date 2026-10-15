@@ -212,16 +212,14 @@ class TestBringup(unittest.TestCase):
         self.drive_forward()
 
         self.linear_x = None
-        # twist_mux times out the input after 0.5 s
-        stopped = self.spin_until(
-            lambda: abs(self.latest_odom().twist.twist.linear.x) < 1e-3)
-        # strict xfail by hand, launch_testing ignores
-        # @unittest.expectedFailure. Once #40 is fixed, replace this with
-        # self.assertTrue(stopped).
-        self.assertFalse(stopped, '#40 is fixed, turn this into an assert')
-        self.skipTest('see #40: twist_mux sends no zero command and the '
-                      'controller holds the last one, still moving at '
-                      f'{self.latest_odom().twist.twist.linear.x} m/s')
+        # twist_mux stops forwarding the input after 0.5 s (without sending
+        # zero), then the controller's cmd_vel_timeout (0.5 s) zeroes the
+        # command (#40)
+        self.assertTrue(
+            self.spin_until(
+                lambda: abs(self.latest_odom().twist.twist.linear.x) < 1e-3),
+            'robot still moving at '
+            f'{self.latest_odom().twist.twist.linear.x} m/s')
 
 
 @launch_testing.post_shutdown_test()
