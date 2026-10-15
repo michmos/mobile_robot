@@ -132,8 +132,10 @@ private:
     failureReason_ = reason;
   }
 
-  const std::chrono::milliseconds retryInterval_;
-  const std::chrono::milliseconds timeout_;
+  // not const, so the plugin can replace its handshake once on_init() has
+  // read the timeout from the hardware parameters
+  std::chrono::milliseconds retryInterval_;
+  std::chrono::milliseconds timeout_;
 
   State state_ = State::IDLE;
   uint32_t id_ = 0;

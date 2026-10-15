@@ -13,7 +13,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 from launch import LaunchContext, LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.utilities import perform_substitutions
 from launch_ros.actions import Node
 import pytest
@@ -27,11 +27,11 @@ REPO_DIR = os.path.join(PKG_DIR, os.pardir)
 XACRO_FILE = os.path.join(PKG_DIR, 'description', 'mobile_robot.urdf.xacro')
 CONFIG_DIR = os.path.join(PKG_DIR, 'config')
 LAUNCH_DIR = os.path.join(PKG_DIR, 'launch')
-HARDWARE_CPP = os.path.join(REPO_DIR, 'mobile_robot_hardware', 'src',
-                            'mobile_robot_hardware.cpp')
+PARAMS_CPP = os.path.join(REPO_DIR, 'mobile_robot_hardware', 'src',
+                          'params.cpp')
 
-# The <param> names parseParams() reads in
-# mobile_robot_hardware/src/mobile_robot_hardware.cpp. Keep in sync with it;
+# The required <param> names parseParams() reads in
+# mobile_robot_hardware/src/params.cpp. Keep in sync with it;
 # test_hardware_param_list_matches_parse_params guards against drift.
 HARDWARE_PARAMS = {
     'serial_port',
@@ -49,6 +49,11 @@ HARDWARE_PARAMS = {
     'report_rate_hz',
     'invert_left',
     'invert_right',
+}
+
+# Params parseParams() reads only if present (with a default otherwise).
+OPTIONAL_HARDWARE_PARAMS = {
+    'handshake_timeout_ms',
 }
 
 WHEEL_JOINTS = ['left_wheel_joint', 'right_wheel_joint']
@@ -117,7 +122,27 @@ def load_launch_description(name, tmp_path, monkeypatch):
         name[:-3], os.path.join(LAUNCH_DIR, name))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # read description/ and config/ from the source tree
+    monkeypatch.setattr(module, 'get_package_share_directory',
+                        lambda package: PKG_DIR)
     return module.generate_launch_description()
+
+
+def launch_entities(description):
+    """Top-level actions, with OpaqueFunctions run at the default args."""
+    context = LaunchContext()
+    for action in description.entities:
+        if isinstance(action, DeclareLaunchArgument):
+            context.launch_configurations[action.name] = perform_substitutions(
+                context, action.default_value)
+    entities = []
+    for action in description.entities:
+        if isinstance(action, OpaqueFunction):
+            entities += action.execute(context) or []
+        else:
+            entities.append(action)
+    return [e for e in entities
+            if e.condition is None or e.condition.evaluate(context)]
 
 
 def resolve(value):
@@ -130,7 +155,7 @@ def resolve(value):
 def nodes(description):
     """(package, executable, spawner arguments) of each Node in a launch."""
     result = []
-    for action in description.entities:
+    for action in launch_entities(description):
         if not isinstance(action, Node):
             continue
         # cmd[0] is the executable lookup (needs the package installed);
@@ -210,11 +235,14 @@ def test_ros2_control_joints_exist_in_urdf(urdf_xml, ros2_control):
 def test_ros2_control_hardware_params_match_parse_params(ros2_control):
     # A missing param makes on_init fail on the robot; an extra one is
     # silently ignored (likely a typo).
-    assert set(hardware_params(ros2_control)) == HARDWARE_PARAMS
+    params = set(hardware_params(ros2_control))
+
+    assert HARDWARE_PARAMS <= params
+    assert params - HARDWARE_PARAMS <= OPTIONAL_HARDWARE_PARAMS
 
 
 def test_hardware_param_list_matches_parse_params():
-    with open(HARDWARE_CPP) as file:
+    with open(PARAMS_CPP) as file:
         source = file.read()
     parse_params = source[source.index('parseParams(const'):]
     parse_params = parse_params[:parse_params.index('\n}\n')]
@@ -222,7 +250,7 @@ def test_hardware_param_list_matches_parse_params():
     keys = set(re.findall(r'parseParam<[\w:]+>\(\s*p\s*,\s*"(\w+)"\)',
                           parse_params))
 
-    assert keys == HARDWARE_PARAMS
+    assert keys == HARDWARE_PARAMS | OPTIONAL_HARDWARE_PARAMS
 
 
 # YAML configs
