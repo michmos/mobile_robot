@@ -18,6 +18,7 @@ find_package(serial_driver REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_hardware.cpp
+  src/params.cpp
   src/wire_protocol.cpp
 )
 
@@ -104,6 +105,18 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
+
+  # pure functions, no node and no serial port: only the hardware_interface
+  # types and lexical casts are needed, not the whole plugin
+  ament_add_gtest(test_params
+    test/test_params.cpp
+    src/params.cpp
+  )
+  target_include_directories(test_params PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+  )
+  target_link_libraries(test_params ${hardware_interface_TARGETS})
 
   # drives the plugin through its lifecycle against a fake esp32 on a pty
   # (test/fake_esp32.hpp). The failing handshake cases wait for their
