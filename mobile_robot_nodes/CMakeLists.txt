@@ -45,6 +45,11 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_urdf_kinematics test/test_urdf_kinematics.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
+  # Static checks of description, configs, launch files and plugin.xml.
+  # Nothing is started, the launch files are only imported.
+  ament_add_pytest_test(test_smoke test/test_smoke.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
   ament_add_pytest_test(test_robot_description test/test_robot_description.py)
   # Only builds the launch description, starts no node.
   ament_add_pytest_test(test_mobile_robot_launch

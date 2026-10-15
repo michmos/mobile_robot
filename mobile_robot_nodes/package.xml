@@ -19,7 +19,9 @@
   <!-- test_urdf_kinematics.py expands the real robot description -->
   <test_depend>xacro</test_depend>
   <test_depend>python3-yaml</test_depend>
-  <!-- test_mobile_robot_launch.py builds the launch description -->
+  <!-- test_smoke.py parses the URDF; test_smoke.py and
+       test_mobile_robot_launch.py build the launch descriptions -->
+  <test_depend>urdfdom_py</test_depend>
   <test_depend>launch</test_depend>
   <test_depend>launch_ros</test_depend>
   <!-- test_bringup.launch.py runs the full launch with mock hardware -->
