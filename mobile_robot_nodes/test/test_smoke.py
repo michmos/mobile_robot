@@ -58,6 +58,12 @@ OPTIONAL_HARDWARE_PARAMS = {
 
 WHEEL_JOINTS = ['left_wheel_joint', 'right_wheel_joint']
 
+# Hardware plugin per value of the use_mock_hardware xacro arg.
+HARDWARE_PLUGINS = {
+    'false': 'mobile_robot_hardware/MobileRobotHardware',
+    'true': 'mock_components/GenericSystem',
+}
+
 # Controller types from ros2_controllers this repo may use. Types not in
 # here must be exported by a plugin.xml in this repo.
 KNOWN_ROS2_CONTROLLERS_TYPES = {
@@ -73,18 +79,38 @@ PLUGIN_PACKAGES = ['mobile_robot_hardware', 'mobile_robot_controller']
 
 # helpers
 
+def expand_xacro(use_mock_hardware):
+    return xacro.process_file(
+        XACRO_FILE,
+        mappings={'use_mock_hardware': use_mock_hardware}).toxml()
+
+
+def ros2_control_block(urdf_xml):
+    blocks = ET.fromstring(urdf_xml).findall('ros2_control')
+    assert len(blocks) == 1
+    return blocks[0]
+
+
+@pytest.fixture(scope='module', params=sorted(HARDWARE_PLUGINS))
+def use_mock_hardware(request):
+    return request.param
+
+
 @pytest.fixture(scope='module')
-def urdf_xml():
-    # TODO(#6): once the use_mock_hardware xacro arg is merged, run the
-    # description tests for both values (mappings={'use_mock_hardware': ...}).
-    return xacro.process_file(XACRO_FILE).toxml()
+def urdf_xml(use_mock_hardware):
+    # The description must hold on the robot and with the mock hardware.
+    return expand_xacro(use_mock_hardware)
 
 
 @pytest.fixture(scope='module')
 def ros2_control(urdf_xml):
-    blocks = ET.fromstring(urdf_xml).findall('ros2_control')
-    assert len(blocks) == 1
-    return blocks[0]
+    return ros2_control_block(urdf_xml)
+
+
+@pytest.fixture(scope='module')
+def esp32_ros2_control():
+    """<ros2_control> of the real robot; the mock has no esp32 params."""
+    return ros2_control_block(expand_xacro('false'))
 
 
 def load_yaml(name):
@@ -203,10 +229,11 @@ def test_urdf_has_expected_joints(urdf_xml):
     }
 
 
-def test_ros2_control_uses_mobile_robot_hardware_plugin(ros2_control):
+def test_ros2_control_uses_expected_hardware_plugin(use_mock_hardware,
+                                                    ros2_control):
     assert ros2_control.get('type') == 'system'
     assert ros2_control.findtext('hardware/plugin') == \
-        'mobile_robot_hardware/MobileRobotHardware'
+        HARDWARE_PLUGINS[use_mock_hardware]
 
 
 def test_ros2_control_has_wheel_joints_with_expected_interfaces(
@@ -232,10 +259,11 @@ def test_ros2_control_joints_exist_in_urdf(urdf_xml, ros2_control):
 
 # hardware params
 
-def test_ros2_control_hardware_params_match_parse_params(ros2_control):
+def test_ros2_control_hardware_params_match_parse_params(
+        esp32_ros2_control):
     # A missing param makes on_init fail on the robot; an extra one is
     # silently ignored (likely a typo).
-    params = set(hardware_params(ros2_control))
+    params = set(hardware_params(esp32_ros2_control))
 
     assert HARDWARE_PARAMS <= params
     assert params - HARDWARE_PARAMS <= OPTIONAL_HARDWARE_PARAMS
@@ -284,13 +312,13 @@ def test_controller_types_are_exported_or_known():
 
 
 def test_controller_manager_update_rate_matches_hardware_control_rate(
-        ros2_control):
+        esp32_ros2_control):
     # controller_manager.yaml claims both loops run at the same rate.
     params = load_yaml('controller_manager.yaml')[
         'controller_manager']['ros__parameters']
 
     assert params['update_rate'] == int(
-        hardware_params(ros2_control)['control_rate_hz'])
+        hardware_params(esp32_ros2_control)['control_rate_hz'])
 
 
 def test_controller_joint_names_exist_in_ros2_control(ros2_control):
