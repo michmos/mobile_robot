@@ -56,6 +56,11 @@ jobs:
           ref: 82cce0fcb54f9edc61fe365df95f97aaf7bdc8c0
           path: ros2_ws/src/xv_11_driver
 
+      # upstream calls declare_parameter(name) without a default, an overload
+      # rclcpp no longer has on kilted. Same change as in the maintainer's checkout.
+      - name: Patch xv_11_driver for kilted
+        run: git -C src/xv_11_driver apply "$PWD/src/mobile_robot/.github/patches/xv_11_driver-kilted.patch"
+
       - name: Build
         run: |
           source /opt/ros/kilted/setup.bash
