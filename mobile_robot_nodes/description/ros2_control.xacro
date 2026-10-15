@@ -1,35 +1,48 @@
 
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <!-- use_mock_hardware:=true swaps the esp32 for mock_components/GenericSystem
+       so the stack runs on a dev machine / in tests without hardware -->
+  <xacro:arg name="use_mock_hardware" default="false"/>
+  <xacro:property name="use_mock_hardware" value="$(arg use_mock_hardware)"/>
+
   <ros2_control name="mobile_robot_ros2_control" type="system">
 
     <hardware>
-      <plugin>mobile_robot_hardware/MobileRobotHardware</plugin>
-      <!-- list all params here that are needed by the hardware plugin - it will receive them  -->
-      <!-- through the info object. e.g. baud_rate, serial_port ... -->
-      <param name="serial_port">/dev/esp32</param>
-      <param name="baud_rate">115200</param>
+      <xacro:if value="${use_mock_hardware}">
+        <plugin>mock_components/GenericSystem</plugin>
+        <!-- integrate the commanded velocity into the position state, so
+             odometry moves like on the real robot -->
+        <param name="calculate_dynamics">true</param>
+      </xacro:if>
+      <xacro:unless value="${use_mock_hardware}">
+        <plugin>mobile_robot_hardware/MobileRobotHardware</plugin>
+        <!-- list all params here that are needed by the hardware plugin - it will receive them  -->
+        <!-- through the info object. e.g. baud_rate, serial_port ... -->
+        <param name="serial_port">/dev/esp32</param>
+        <param name="baud_rate">115200</param>
 
-      <!-- PI gains, shared by both wheels, integral limit is a duty fraction -->
-      <param name="pid_kp">0.5</param>
-      <param name="pid_ki">2.0</param>
-      <param name="pid_integral_limit">0.3</param>
+        <!-- PI gains, shared by both wheels, integral limit is a duty fraction -->
+        <param name="pid_kp">0.5</param>
+        <param name="pid_ki">2.0</param>
+        <param name="pid_integral_limit">0.3</param>
 
-      <!-- feedforward per wheel, slope in duty fraction per (rad/s),
-           min_duty in [0,1) compensates the motor deadband -->
-      <param name="ff_slope_left">0.1</param>
-      <param name="ff_slope_right">0.1</param>
-      <param name="ff_min_duty_left">0.0</param>
-      <param name="ff_min_duty_right">0.0</param>
+        <!-- feedforward per wheel, slope in duty fraction per (rad/s),
+             min_duty in [0,1) compensates the motor deadband -->
+        <param name="ff_slope_left">0.1</param>
+        <param name="ff_slope_right">0.1</param>
+        <param name="ff_min_duty_left">0.0</param>
+        <param name="ff_min_duty_right">0.0</param>
 
-      <param name="ticks_per_wheel_rev">480</param>
+        <param name="ticks_per_wheel_rev">480</param>
 
-      <!-- report_rate_hz must not exceed control_rate_hz -->
-      <param name="watchdog_timeout_ms">200</param>
-      <param name="control_rate_hz">200</param>
-      <param name="report_rate_hz">50</param>
+        <!-- report_rate_hz must not exceed control_rate_hz -->
+        <param name="watchdog_timeout_ms">200</param>
+        <param name="control_rate_hz">200</param>
+        <param name="report_rate_hz">50</param>
 
-      <param name="invert_left">true</param>
-      <param name="invert_right">false</param>
+        <param name="invert_left">true</param>
+        <param name="invert_right">false</param>
+      </xacro:unless>
     </hardware>
 
     <joint name="left_wheel_joint">
@@ -37,8 +50,16 @@
         <param name="min" value="-10.0"/>
         <param name="max" value="10.0"/>
       </command_interface>
-      <state_interface name="velocity"/>
-      <state_interface name="position"/>
+      <state_interface name="velocity">
+        <xacro:if value="${use_mock_hardware}">
+          <param name="initial_value">0.0</param>
+        </xacro:if>
+      </state_interface>
+      <state_interface name="position">
+        <xacro:if value="${use_mock_hardware}">
+          <param name="initial_value">0.0</param>
+        </xacro:if>
+      </state_interface>
     </joint>
 
     <joint name="right_wheel_joint">
@@ -46,8 +67,16 @@
         <param name="min" value="-10.0"/>
         <param name="max" value="10.0"/>
       </command_interface>
-      <state_interface name="velocity"/>
-      <state_interface name="position"/>
+      <state_interface name="velocity">
+        <xacro:if value="${use_mock_hardware}">
+          <param name="initial_value">0.0</param>
+        </xacro:if>
+      </state_interface>
+      <state_interface name="position">
+        <xacro:if value="${use_mock_hardware}">
+          <param name="initial_value">0.0</param>
+        </xacro:if>
+      </state_interface>
     </joint>
 
   </ros2_control>
