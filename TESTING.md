@@ -83,8 +83,9 @@ Rules:
 
 - Add every test-only dependency as `<test_depend>` in the package's `package.xml` and inside
   `if(BUILD_TESTING)` in `CMakeLists.txt`.
-- If the docker image lacks a package, add `ros-kilted-<name>` to `ros2_ws/Dockerfile.ros2`
-  (see `ros2_ws/AGENTS.md`). The CI workflow must get the same dependency.
+- If the docker image lacks a package, add `ros-kilted-<name>` to `docker/Dockerfile.ros2`. CI
+  runs in the image built from that file (see `OVERVIEW.md`); if your local image is built from a
+  copy of it (e.g. `ros2_ws/Dockerfile.ros2`, see `ros2_ws/AGENTS.md`), update the copy too.
 - Don't add new test frameworks. Stick to gtest/gmock, pytest and launch_testing.
 
 ## 7. Running the tests

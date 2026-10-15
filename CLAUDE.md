@@ -16,7 +16,9 @@ Tests: read `TESTING.md` before writing any test (standards, faking hardware, de
 colcon test --packages-select mobile_robot_hardware mobile_robot_controller mobile_robot && colcon test-result --verbose
 ```
 
-ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently through the Arduino IDE/arduino-cli with the `micro_ros_arduino` library installed; it is not part of the colcon build.
+CI (`.github/workflows/ci.yml`) runs the same build and tests, plus the firmware compile and shellcheck, inside the prebuilt image `ghcr.io/michmos/mobile_robot_ci:kilted` (built from `docker/Dockerfile.ros2` by `.github/workflows/image.yml`). A missing test dependency goes into that Dockerfile; CI only sees it after the change is merged to `dev` and `image.yml` has run (see `OVERVIEW.md`).
+
+ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently through the Arduino IDE/arduino-cli (core `esp32:esp32@2.0.17`, no extra libraries); it is not part of the colcon build.
 
 ## Code Conventions
 - C++ is formatted with clang-format and the repo's `.clang-format` (LLVM style); `colcon test` checks it with `ament_clang_format` (uncrustify is off). Run `clang-format -i` on C++ files you touch. Linter setup shared by all packages: `lint/lint.cmake`.
