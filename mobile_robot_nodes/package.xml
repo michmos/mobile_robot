@@ -19,15 +19,36 @@
   <!-- test_urdf_kinematics.py expands the real robot description -->
   <test_depend>xacro</test_depend>
   <test_depend>python3-yaml</test_depend>
+  <!-- test_smoke.py parses the URDF; test_smoke.py and
+       test_mobile_robot_launch.py build the launch descriptions -->
+  <test_depend>urdfdom_py</test_depend>
+  <test_depend>launch</test_depend>
+  <test_depend>launch_ros</test_depend>
+  <!-- test_bringup.launch.py runs the full launch with mock hardware -->
+  <test_depend>ament_cmake_ros</test_depend>
+  <test_depend>launch_testing</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>controller_manager_msgs</test_depend>
+  <test_depend>geometry_msgs</test_depend>
+  <test_depend>nav_msgs</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>std_msgs</test_depend>
+  <test_depend>tf2_ros</test_depend>
 
   <!-- mobile_robot_launch.py: brings up controller_manager against
-       MobileRobotHardware, with mobile_robot_controller spawned,
-       plus the lidar driver -->
+       MobileRobotHardware (or mock_components/GenericSystem from
+       hardware_interface with use_mock_hardware:=true), with
+       mobile_robot_controller spawned, plus the lidar driver -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>xacro</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>hardware_interface</exec_depend>
   <exec_depend>mobile_robot_hardware</exec_depend>
   <exec_depend>mobile_robot_controller</exec_depend>
   <exec_depend>xv_11_driver</exec_depend>

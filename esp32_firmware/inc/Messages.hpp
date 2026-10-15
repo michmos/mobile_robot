@@ -5,6 +5,7 @@
 #include "Crc16.hpp"
 #include <Arduino.h>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -28,7 +29,9 @@ protected:
 
     char *endptr = NULL;
     float val = strtof(str, &endptr);
-    if (endptr == str || *endptr != '\0') {
+    // strtof() also accepts "nan" and "inf", which no field can use: a NaN
+    // velocity would pass every comparison-based check downstream
+    if (endptr == str || *endptr != '\0' || !std::isfinite(val)) {
       *errFlag = true;
       return -1.0f;
     }
@@ -52,6 +55,8 @@ protected:
     return (uint16_t)val;
   }
 
+  // 0 is rejected on purpose: it is the "nothing parsed yet" value of
+  // Config::handshake_id, and the pi never sends it (handshake.hpp skips it)
   uint32_t parseUInt32_(const char *str, bool *errFlag) {
     if (!str) {
       *errFlag = true;
@@ -317,6 +322,16 @@ public:
 private:
   std::string detail_;
 };
+
+// the reply to a config line after Config::init(): S,ACK,<handshake_id> if it
+// succeeded, S,NACK,<handshake_id>,<lastError()> otherwise
+inline Event configReply(const Config &config) {
+  if (config.lastError() == NULL) {
+    return Event(Event::ACK, std::to_string(config.handshake_id));
+  }
+  return Event(Event::NACK,
+               std::to_string(config.handshake_id) + "," + config.lastError());
+}
 
 // L,<log message>
 class Log : public ASendMessage {
