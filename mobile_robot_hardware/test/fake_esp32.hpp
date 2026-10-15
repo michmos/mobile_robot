@@ -85,6 +85,11 @@ public:
   // sends `line` + '\n' to the plugin, as the esp32 would
   void sendLine(const std::string &line) { writeAll_(line + "\n"); }
 
+  // sends `data` as is, in a single write() to the pty where possible. For
+  // partial lines, and for several lines that should reach the plugin
+  // together (a small write is handed to the reader in one piece)
+  void sendRaw(const std::string &data) { writeAll_(data); }
+
   // waits for the next received line that starts with `prefix`. Lines before
   // it are consumed as well, so consecutive calls walk forward through what
   // the plugin sent

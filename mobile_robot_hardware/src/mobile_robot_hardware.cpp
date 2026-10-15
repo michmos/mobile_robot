@@ -640,6 +640,12 @@ void MobileRobotHardware::updateEncoderState_(const std::string &line) {
       warnIfFailed(rightVelocityState_->set_value(rightVelocity),
                    "right velocity");
     }
+  } else {
+    // no previous sample to measure against. Without this the velocity stays
+    // NaN (the interfaces' initial value) after activation, or keeps its value
+    // from before an esp32 restart
+    warnIfFailed(leftVelocityState_->set_value(0.0), "left velocity");
+    warnIfFailed(rightVelocityState_->set_value(0.0), "right velocity");
   }
 
   lastSampleTimeUs_ = timestampUs;
