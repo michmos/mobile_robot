@@ -136,6 +136,62 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
   target_link_libraries(test_encoder_state ${PROJECT_NAME} util)
+
+  # host tests for the hardware independent firmware code in esp32_firmware/inc/,
+  # the Arduino core is replaced by the controllable fake in test/arduino_stub
+  ament_add_gtest(test_arduino_stub test/firmware/test_arduino_stub.cpp)
+  target_include_directories(test_arduino_stub PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_motor_control test/firmware/test_motor_control.cpp)
+  target_include_directories(test_motor_control PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_scheduler test/firmware/test_scheduler.cpp)
+  target_include_directories(test_scheduler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_velocity test/firmware/test_velocity.cpp)
+  target_include_directories(test_velocity PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_drive test/firmware/test_drive.cpp)
+  target_include_directories(test_drive PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_l298 test/firmware/test_l298.cpp)
+  target_include_directories(test_l298 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_encoder test/firmware/test_encoder.cpp)
+  target_include_directories(test_encoder PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_serial_channel test/firmware/test_serial_channel.cpp)
+  target_include_directories(test_serial_channel PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_messages test/firmware/test_messages.cpp)
+  target_include_directories(test_messages PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
 endif()
 
 ament_package()

@@ -1,10 +1,9 @@
 #include "mobile_robot_controller/mobile_robot_controller.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
+#include "mobile_robot_controller/kinematics.hpp"
 #include "nav_msgs/msg/odometry.hpp"
-#include "tf2/LinearMath/Quaternion.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
-#include <cmath>
 #include <controller_interface/controller_interface_base.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <memory>
@@ -25,6 +24,8 @@ controller_interface::CallbackReturn MobileRobotController::on_init() {
     get_node()->declare_parameter<double>("yaw_variance_per_radian", 0.0);
     get_node()->declare_parameter<double>("linear_velocity_variance", 0.0);
     get_node()->declare_parameter<double>("angular_velocity_variance", 0.0);
+    // same default as diff_drive_controller
+    get_node()->declare_parameter<double>("cmd_vel_timeout", 0.5);
   } catch (const std::exception &e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s",
                  e.what());
@@ -75,6 +76,7 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
       get_node()->get_parameter("linear_velocity_variance").as_double();
   variances_.angularVelocity =
       get_node()->get_parameter("angular_velocity_variance").as_double();
+  cmdVelTimeout_ = get_node()->get_parameter("cmd_vel_timeout").as_double();
 
   // validate params
   if (leftWheelJointName_.empty() || rightWheelJointName_.empty()) {
@@ -94,6 +96,12 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
                  "position_variance_per_meter/yaw_variance_per_radian/"
                  "linear_velocity_variance/angular_velocity_variance must "
                  "be > 0");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  // a timeout of 0 or less would either stop the robot on every cycle or
+  // (if read as "disabled") let it drive on forever when commands stop
+  if (cmdVelTimeout_ <= 0.0) {
+    RCLCPP_ERROR(get_node()->get_logger(), "cmd_vel_timeout must be > 0");
     return controller_interface::CallbackReturn::ERROR;
   }
 
@@ -129,6 +137,9 @@ MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
   // set cmd_vel buffer to safe command - TwistStamped's default constructor
   // zero-initializes linear/angular, no need to set fields individually
   cmdVelBuffer_.initRT(std::make_shared<geometry_msgs::msg::TwistStamped>());
+  // forget the command seen before deactivation, the first update() takes
+  // the buffer's content as a new command
+  lastCmdVel_.reset();
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -160,9 +171,27 @@ MobileRobotController::update(const rclcpp::Time &time,
   publishOdometry_(time);
 
   // write commands
-  auto t = cmdVelBuffer_.readFromRT();
-  auto cmds =
-      inverseKinematics_(t->get()->twist.linear.x, t->get()->twist.angular.z);
+  const auto &cmdVel = *cmdVelBuffer_.readFromRT();
+  if (cmdVel != lastCmdVel_) {
+    // first update() that sees this command: take its time as receive time
+    lastCmdVel_ = cmdVel;
+    lastCmdVelTime_ = time;
+  }
+
+  // stop if the velocity source went quiet (e.g. twist_mux timed out its
+  // input, which stops forwarding instead of publishing zero). A negative
+  // age (time jumped back, e.g. a sim reset) also counts as stale.
+  const double cmdVelAge = (time - lastCmdVelTime_).seconds();
+  const bool cmdVelStale = cmdVelAge > cmdVelTimeout_ || cmdVelAge < 0.0;
+  double linearVel = 0.0;
+  double angularVel = 0.0;
+  if (!cmdVelStale) {
+    linearVel = lastCmdVel_->twist.linear.x;
+    angularVel = lastCmdVel_->twist.angular.z;
+  }
+
+  auto cmds = inverseKinematics(linearVel, angularVel, wheelSeparation_,
+                                wheelRadius_);
   if (!command_interfaces_[LEFT].set_value(cmds.first) ||
       !command_interfaces_[RIGHT].set_value(cmds.second)) {
     RCLCPP_ERROR(get_node()->get_logger(),
@@ -178,46 +207,23 @@ void MobileRobotController::cmdVelCallback_(
   cmdVelBuffer_.writeFromNonRT(msg);
 }
 
-std::pair<double, double>
-MobileRobotController::inverseKinematics_(double linearVel,
-                                          double angularVel) const {
-  // velocity difference rule for rigid bodies
-  double leftWheelSpeed = linearVel - angularVel * wheelSeparation_ / 2.0;
-  double rightWheelSpeed = linearVel + angularVel * wheelSeparation_ / 2.0;
-
-  // convert wheel linear speed (m/s) to wheel angular velocity (rad/s)
-  double leftWheelVel = leftWheelSpeed / wheelRadius_;
-  double rightWheelVel = rightWheelSpeed / wheelRadius_;
-
-  return {leftWheelVel, rightWheelVel};
-}
-
 void MobileRobotController::updateOdometry_(double leftJointPose,
                                             double rightJointPose,
                                             const rclcpp::Duration &period) {
   if (!lastJointPose_.outdated) {
-    double distanceLeft = (leftJointPose - lastJointPose_.left) * wheelRadius_;
-    double distanceRight =
-        (rightJointPose - lastJointPose_.right) * wheelRadius_;
-    double distanceCenter = (distanceLeft + distanceRight) / 2.0;
-    double deltaHeading = (distanceRight - distanceLeft) / wheelSeparation_;
-
-    // mid point approx to get new pose
-    double headingMid = pose_.heading + deltaHeading / 2.0;
-    pose_.x += distanceCenter * cos(headingMid);
-    pose_.y += distanceCenter * sin(headingMid);
-    pose_.heading += deltaHeading;
+    BodyDelta delta = integrateOdometry(
+        pose_, leftJointPose - lastJointPose_.left,
+        rightJointPose - lastJointPose_.right, wheelSeparation_, wheelRadius_);
 
     // increment pose variance by how far the robot actually moved this cycle
-    poseVariance_.position +=
-        variances_.positionPerMeter * std::fabs(distanceCenter);
-    poseVariance_.yaw += variances_.yawPerRadian * std::fabs(deltaHeading);
+    growPoseVariance(poseVariance_, delta, variances_.positionPerMeter,
+                     variances_.yawPerRadian);
 
     // get velocities - only valid if the period was non-zero
     double dt = period.seconds();
     if (dt > 0.0) {
-      twist_.linearVelocity = distanceCenter / dt;
-      twist_.angularVelocity = deltaHeading / dt;
+      twist_.linearVelocity = delta.distance / dt;
+      twist_.angularVelocity = delta.heading / dt;
     }
   }
 
@@ -233,15 +239,11 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   odomMsg.header.frame_id = odomFrameId_;
   odomMsg.child_frame_id = baseFrameId_;
 
-  tf2::Quaternion q;
-  q.setRPY(0.0, 0.0, pose_.heading);
+  const auto q = yawToQuaternion(pose_.heading);
 
   odomMsg.pose.pose.position.x = pose_.x;
   odomMsg.pose.pose.position.y = pose_.y;
-  odomMsg.pose.pose.orientation.x = 0.0;
-  odomMsg.pose.pose.orientation.y = 0.0;
-  odomMsg.pose.pose.orientation.z = q.z();
-  odomMsg.pose.pose.orientation.w = q.w();
+  odomMsg.pose.pose.orientation = q;
 
   odomMsg.twist.twist.linear.x = twist_.linearVelocity;
   odomMsg.twist.twist.angular.z = twist_.angularVelocity;
@@ -252,14 +254,14 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   // robot_localization) treat an exact 0 variance ambiguously
   constexpr double kNegligibleVariance = 1e-9;
 
-  setDiagonalCovariance_(odomMsg.pose.covariance, poseVariance_.position,
-                         poseVariance_.position, kNegligibleVariance,
-                         kNegligibleVariance, kNegligibleVariance,
-                         poseVariance_.yaw);
-  setDiagonalCovariance_(odomMsg.twist.covariance, variances_.linearVelocity,
-                         kNegligibleVariance, kNegligibleVariance,
-                         kNegligibleVariance, kNegligibleVariance,
-                         variances_.angularVelocity);
+  setDiagonalCovariance(odomMsg.pose.covariance, poseVariance_.position,
+                        poseVariance_.position, kNegligibleVariance,
+                        kNegligibleVariance, kNegligibleVariance,
+                        poseVariance_.yaw);
+  setDiagonalCovariance(odomMsg.twist.covariance, variances_.linearVelocity,
+                        kNegligibleVariance, kNegligibleVariance,
+                        kNegligibleVariance, kNegligibleVariance,
+                        variances_.angularVelocity);
 
   realtimeOdomPub_->try_publish(odomMsg);
 
@@ -271,25 +273,9 @@ void MobileRobotController::publishOdometry_(const rclcpp::Time &time) {
   tfMsg.transforms[0].transform.translation.x = pose_.x;
   tfMsg.transforms[0].transform.translation.y = pose_.y;
   tfMsg.transforms[0].transform.translation.z = 0.0;
-  tfMsg.transforms[0].transform.rotation.x = 0.0;
-  tfMsg.transforms[0].transform.rotation.y = 0.0;
-  tfMsg.transforms[0].transform.rotation.z = q.z();
-  tfMsg.transforms[0].transform.rotation.w = q.w();
+  tfMsg.transforms[0].transform.rotation = q;
 
   realtimeTfPub_->try_publish(tfMsg);
-}
-
-void MobileRobotController::setDiagonalCovariance_(
-    std::array<double, 36> &covariance, double xVariance, double yVariance,
-    double zVariance, double rollVariance, double pitchVariance,
-    double yawVariance) {
-  // ! one dimenstional array !
-  covariance[0] = xVariance;      // (0, 0)
-  covariance[7] = yVariance;      // (1, 1)
-  covariance[14] = zVariance;     // (2, 2)
-  covariance[21] = rollVariance;  // (3, 3)
-  covariance[28] = pitchVariance; // (4, 4)
-  covariance[35] = yawVariance;   // (5, 5)
 }
 
 PLUGINLIB_EXPORT_CLASS(mobile_robot_controller::MobileRobotController,
