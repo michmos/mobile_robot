@@ -5,6 +5,7 @@
 #include <hardware_interface/hardware_info.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -200,6 +201,104 @@ TEST(ParseParams, BaudRateZeroThrows) {
   ParamMap params = validParams();
   params["baud_rate"] = "0";
   EXPECT_THROW(parseParams(params), std::runtime_error);
+}
+
+// handshake_timeout_ms is optional, validParams() leaves it out
+
+TEST(ParseParams, HandshakeTimeoutMissingLeavesItUnset) {
+  const ParsedParams parsed = parseParams(validParams());
+  // on_init() falls back to its 10 s default
+  EXPECT_FALSE(parsed.handshakeTimeout.has_value());
+}
+
+TEST(ParseParams, HandshakeTimeoutIsReadInMilliseconds) {
+  ParamMap params = validParams();
+  params["handshake_timeout_ms"] = "5000";
+  const ParsedParams parsed = parseParams(params);
+  ASSERT_TRUE(parsed.handshakeTimeout.has_value());
+  EXPECT_EQ(*parsed.handshakeTimeout, std::chrono::milliseconds(5000));
+}
+
+TEST(ParseParams, HandshakeTimeoutBoundariesAreAccepted) {
+  ParamMap params = validParams();
+  params["handshake_timeout_ms"] = "1";
+  EXPECT_EQ(parseParams(params).handshakeTimeout, std::chrono::milliseconds(1));
+  params["handshake_timeout_ms"] = "4294967295";
+  EXPECT_EQ(parseParams(params).handshakeTimeout,
+            std::chrono::milliseconds(UINT32_MAX));
+}
+
+TEST(ParseParams, HandshakeTimeoutWrittenAsWholeFloatIsAccepted) {
+  ParamMap params = validParams();
+  params["handshake_timeout_ms"] = "200.0";
+  EXPECT_EQ(parseParams(params).handshakeTimeout,
+            std::chrono::milliseconds(200));
+  params["handshake_timeout_ms"] = "1e3";
+  EXPECT_EQ(parseParams(params).handshakeTimeout,
+            std::chrono::milliseconds(1000));
+}
+
+// a 0 ms timeout would give up before the first Config is sent
+TEST(ParseParams, HandshakeTimeoutZeroThrowsNamingTheParameter) {
+  ParamMap params = validParams();
+  params["handshake_timeout_ms"] = "0";
+  try {
+    parseParams(params);
+    FAIL() << "expected std::runtime_error";
+  } catch (const std::runtime_error &e) {
+    EXPECT_NE(std::string(e.what()).find("handshake_timeout_ms"),
+              std::string::npos)
+        << e.what();
+  }
+}
+
+TEST(ParseParams, HandshakeTimeoutNegativeThrows) {
+  ParamMap params = validParams();
+  for (const std::string value : {"-1", "-5000"}) {
+    params["handshake_timeout_ms"] = value;
+    EXPECT_THROW(parseParams(params), std::runtime_error) << value;
+  }
+}
+
+TEST(ParseParams, HandshakeTimeoutAboveUint32MaxThrows) {
+  ParamMap params = validParams();
+  for (const std::string value : {"4294967296", "1e20"}) {
+    params["handshake_timeout_ms"] = value;
+    EXPECT_THROW(parseParams(params), std::runtime_error) << value;
+  }
+}
+
+// "200.5" must not silently become 200 ms
+TEST(ParseParams, HandshakeTimeoutFractionalThrows) {
+  ParamMap params = validParams();
+  for (const std::string value : {"0.5", "200.5"}) {
+    params["handshake_timeout_ms"] = value;
+    EXPECT_THROW(parseParams(params), std::runtime_error) << value;
+  }
+}
+
+// stod() doesn't trim, a stray space in the URDF value is rejected
+TEST(ParseParams, HandshakeTimeoutSurroundingWhitespaceThrows) {
+  ParamMap params = validParams();
+  for (const std::string value : {" 200", "200 ", "\t200"}) {
+    params["handshake_timeout_ms"] = value;
+    EXPECT_THROW(parseParams(params), std::runtime_error) << value;
+  }
+}
+
+TEST(ParseParams, HandshakeTimeoutMalformedThrowsNamingTheParameter) {
+  ParamMap params = validParams();
+  for (const std::string value : {"", "soon", "200ms", "nan", "inf"}) {
+    params["handshake_timeout_ms"] = value;
+    try {
+      parseParams(params);
+      FAIL() << "expected std::runtime_error for '" << value << "'";
+    } catch (const std::runtime_error &e) {
+      EXPECT_NE(std::string(e.what()).find("handshake_timeout_ms"),
+                std::string::npos)
+          << e.what();
+    }
+  }
 }
 
 TEST(ParseParams, EveryMissingParameterThrows) {
