@@ -35,6 +35,22 @@ TEST_F(ArduinoStubTest, ClockIsControlledByTheTest) {
   EXPECT_EQ(micros(), 25999UL);
 }
 
+TEST_F(ArduinoStubTest, ClockWrapsAt32BitLikeTheEsp32) {
+  // micros() wraps after ~71.6 min on the esp32, the firmware has to cope
+  arduino_stub::setMicros(0xFFFFFFFFULL);
+  EXPECT_EQ(micros(), 0xFFFFFFFFUL);
+  arduino_stub::advanceMicros(1);
+  EXPECT_EQ(micros(), 0UL);
+  arduino_stub::advanceMicros(10);
+  EXPECT_EQ(micros(), 10UL);
+
+  // millis() wraps on its own after ~49.7 days, not together with micros()
+  arduino_stub::setMillis(0xFFFFFFFFULL);
+  EXPECT_EQ(millis(), 0xFFFFFFFFUL);
+  arduino_stub::advanceMillis(1);
+  EXPECT_EQ(millis(), 0UL);
+}
+
 TEST_F(ArduinoStubTest, DelayAdvancesTheClockWithoutBlocking) {
   delay(10);
   EXPECT_EQ(millis(), 10UL);

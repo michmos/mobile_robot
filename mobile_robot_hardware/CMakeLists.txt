@@ -119,6 +119,24 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
   )
 
+  ament_add_gtest(test_scheduler test/firmware/test_scheduler.cpp)
+  target_include_directories(test_scheduler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_velocity test/firmware/test_velocity.cpp)
+  target_include_directories(test_velocity PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_drive test/firmware/test_drive.cpp)
+  target_include_directories(test_drive PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
   ament_add_gtest(test_l298 test/firmware/test_l298.cpp)
   target_include_directories(test_l298 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware

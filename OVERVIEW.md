@@ -5,6 +5,7 @@ A differential-drive mobile robot split across two compute targets, connected ov
 This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is not itself a ROS package (no top-level `package.xml`).
 
 - **`esp32_firmware/`** — Arduino/micro-ROS firmware for the ESP32 (encoders, L298N motor driver). No `package.xml`, so colcon ignores it; built/flashed separately via Arduino IDE/arduino-cli.
+  The `.ino` is thin glue; the logic lives in host-testable headers under `esp32_firmware/inc/` (`Drive.hpp`: config update, command watchdog, FF + PI; `Scheduler.hpp`: periodic `due()`; `Velocity.hpp`), tested in `mobile_robot_hardware/test/firmware/`.
 - **`mobile_robot_hardware/`** — `ros2_control` hardware interface plugin; owns the serial link to the ESP32.
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin (diff drive). The kinematics/odometry math lives in free functions in `include/mobile_robot_controller/kinematics.hpp`. Subscribes to the global `/cmd_vel` (`TwistStamped`, written by twist_mux), publishes `/odom` and the `odom` -> `base_link` transform on `/tf`.
 - **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description.
