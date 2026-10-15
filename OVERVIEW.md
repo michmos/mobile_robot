@@ -19,6 +19,8 @@ The defaults are the robot setup; a dev machine (no ESP32, lidar or foxglove) ru
 - `use_lidar` (default `true`) — start `xv_11_driver` on `/dev/ttyAMA0`.
 - `use_foxglove` (default `true`) — start `foxglove_bridge`.
 
+`mobile_robot_nodes/test/test_bringup.launch.py` runs exactly this dev setup under `launch_testing` and checks controllers, `/joint_states`, TF and the `/cmd_vel_joy` → twist_mux → controller → `/odom` path.
+
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
 - **Firmware and hardware plugin must always be updated together**, the two sides reject each other's lines after a wire format change.
