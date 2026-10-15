@@ -12,6 +12,15 @@
 
 namespace mobile_robot_hardware {
 
+// the esp32 -> pi lines are told apart by these, they have to match what
+// Event, Log and EncoderData in esp32_firmware/inc/Messages.hpp write
+// (test/test_wire_contract.cpp checks that)
+inline constexpr char k_setup_line[] = "S,SETUP"; // the whole line
+inline constexpr char k_ack_prefix[] = "S,ACK,";
+inline constexpr char k_nack_prefix[] = "S,NACK,";
+inline constexpr char k_log_prefix[] = "L,";
+inline constexpr char k_encoder_prefix[] = "E,";
+
 // C,<handshake_id>,<kp>,...,<invert_right>,<crc>\n
 // floats are written with enough digits that the esp32 parses back exactly
 // the value the pi validated, <crc> lets it detect a corrupted line

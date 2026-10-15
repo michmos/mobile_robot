@@ -1,6 +1,7 @@
 #ifndef CONFIGPAYLOAD_HPP
 #define CONFIGPAYLOAD_HPP
 
+#include <cmath>
 #include <cstdint>
 
 // Payload of the Config ("C,...") message and its range check, see
@@ -18,6 +19,9 @@ namespace protocol {
 ///////////////////////////////////////////////////////////////////////
 // LIMITS
 ///////////////////////////////////////////////////////////////////////
+
+// floats without an upper limit still have to be finite: an infinite gain
+// turns a zero error into NaN, infinite ticks make every velocity zero
 
 // a duty fraction
 constexpr float k_gain_min = 0.0f; // inclusive
@@ -128,19 +132,19 @@ inline bool samePayload(const ConfigPayload &a, const ConfigPayload &b) {
 // range check of a configuration
 // @return CONFIG_OK, or the first field that is out of range
 inline e_config_field validateConfig(const ConfigPayload &c) {
-  if (!(c.kp >= k_gain_min)) {
+  if (!(c.kp >= k_gain_min && std::isfinite(c.kp))) {
     return CONFIG_KP;
   }
-  if (!(c.ki >= k_gain_min)) {
+  if (!(c.ki >= k_gain_min && std::isfinite(c.ki))) {
     return CONFIG_KI;
   }
-  if (!(c.integral_limit >= k_gain_min)) {
+  if (!(c.integral_limit >= k_gain_min && std::isfinite(c.integral_limit))) {
     return CONFIG_INTEGRAL_LIMIT;
   }
-  if (!(c.slope_left > k_slope_min)) {
+  if (!(c.slope_left > k_slope_min && std::isfinite(c.slope_left))) {
     return CONFIG_SLOPE_LEFT;
   }
-  if (!(c.slope_right > k_slope_min)) {
+  if (!(c.slope_right > k_slope_min && std::isfinite(c.slope_right))) {
     return CONFIG_SLOPE_RIGHT;
   }
   if (!(c.min_duty_left >= k_min_duty_min &&
@@ -151,7 +155,8 @@ inline e_config_field validateConfig(const ConfigPayload &c) {
         c.min_duty_right < k_min_duty_max)) {
     return CONFIG_MIN_DUTY_RIGHT;
   }
-  if (!(c.ticks_per_wheel_rev > k_ticks_per_wheel_rev_min)) {
+  if (!(c.ticks_per_wheel_rev > k_ticks_per_wheel_rev_min &&
+        std::isfinite(c.ticks_per_wheel_rev))) {
     return CONFIG_TICKS_PER_WHEEL_REV;
   }
   if (c.watchdog_timeout_ms < k_timing_min ||

@@ -5,6 +5,7 @@
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
 #include <pluginlib/class_list_macros.hpp>
 
+#include <cstring>
 #include <stdexcept>
 
 using namespace mobile_robot_hardware;
@@ -323,14 +324,14 @@ void MobileRobotHardware::handleSetup_() {
 void MobileRobotHardware::handleHandshakeReply_(const std::string &line) {
   uint32_t id = 0;
   std::string field;
-  if (parseHandshakeReply(line, "S,ACK,", id, field)) {
+  if (parseHandshakeReply(line, k_ack_prefix, id, field)) {
     const bool wasPending = handshake_.state() == Handshake::State::PENDING;
     handshake_.onAck(id);
     if (wasPending && handshake_.state() == Handshake::State::CONFIGURED) {
       RCLCPP_INFO(this->get_logger(), "esp32 on %s acknowledged configuration",
                   serialPort_.c_str());
     }
-  } else if (parseHandshakeReply(line, "S,NACK,", id, field)) {
+  } else if (parseHandshakeReply(line, k_nack_prefix, id, field)) {
     if (handshake_.onNack(id, field)) {
       RCLCPP_WARN(this->get_logger(),
                   "esp32 on %s rejected configuration (%s), retrying",
@@ -410,15 +411,17 @@ void MobileRobotHardware::processNewLines_() {
   // 0ms timeout makes readLine_ non-blocking, draining whatever is already
   // buffered instead of waiting for more to arrive
   while (readLine_(line, std::chrono::milliseconds(0))) {
-    if (line.rfind("L,", 0) == 0) {
-      RCLCPP_INFO(this->get_logger(), "esp32: %s", line.c_str() + 2);
-    } else if (line == "S,SETUP") {
+    if (line.rfind(k_log_prefix, 0) == 0) {
+      RCLCPP_INFO(this->get_logger(), "esp32: %s",
+                  line.c_str() + std::strlen(k_log_prefix));
+    } else if (line == k_setup_line) {
       handleSetup_();
       // encoder lines from before the restart belong to the old tick counter
       latestEncoderLine.reset();
-    } else if (line.rfind("S,ACK,", 0) == 0 || line.rfind("S,NACK,", 0) == 0) {
+    } else if (line.rfind(k_ack_prefix, 0) == 0 ||
+               line.rfind(k_nack_prefix, 0) == 0) {
       handleHandshakeReply_(line);
-    } else if (line.rfind("E,", 0) == 0) {
+    } else if (line.rfind(k_encoder_prefix, 0) == 0) {
       latestEncoderLine = line;
     }
     // anything else is unrecognized and skipped
