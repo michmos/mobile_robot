@@ -5,6 +5,7 @@
 #include "Crc16.hpp"
 #include <Arduino.h>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -28,7 +29,9 @@ protected:
 
     char *endptr = NULL;
     float val = strtof(str, &endptr);
-    if (endptr == str || *endptr != '\0') {
+    // strtof() also accepts "nan" and "inf", which no field can use: a NaN
+    // velocity would pass every comparison-based check downstream
+    if (endptr == str || *endptr != '\0' || !std::isfinite(val)) {
       *errFlag = true;
       return -1.0f;
     }

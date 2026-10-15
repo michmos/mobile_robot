@@ -89,16 +89,17 @@ public:
 
   // drive motor 1/2 from a normalized duty cycle
   // @param duty_cycle: normalized duty cycle in [0; 1]
-  // @return: 0 on success, -1 if duty_cycle is out of range
+  // @return: 0 on success, -1 if duty_cycle is out of range or NaN (written
+  // so NaN fails the check, converting it to the pwm duty is undefined)
   int setDuty1(float duty_cycle) {
-    if (duty_cycle < 0 || duty_cycle > 1) {
+    if (!(duty_cycle >= 0.0f && duty_cycle <= 1.0f)) {
       return -1;
     }
     ledcWrite(k_channel1_, duty_cycle * duty_max_ + 0.5f);
     return 0;
   }
   int setDuty2(float duty_cycle) {
-    if (duty_cycle < 0 || duty_cycle > 1) {
+    if (!(duty_cycle >= 0.0f && duty_cycle <= 1.0f)) {
       return -1;
     }
     ledcWrite(k_channel2_, duty_cycle * duty_max_ + 0.5f);

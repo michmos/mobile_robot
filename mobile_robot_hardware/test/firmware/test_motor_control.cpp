@@ -86,13 +86,17 @@ TEST_F(MotorControlTest, FeedforwardClampsToDutyRange) {
   EXPECT_NEAR(mc_.feedforwardLeft(-100.0f), -1.0f, k_tol);
 }
 
-TEST_F(MotorControlTest, FeedforwardClampsInfiniteCommand) {
+TEST_F(MotorControlTest, FeedforwardInfiniteCommandStops) {
   Gains g;
+  g.min_duty_left = 0.2f;
   configure(g);
 
+  // inf is no speed the robot can reach, it only shows up when something
+  // upstream went wrong (#22). Treated like NaN: stop, don't saturate
   const float inf = std::numeric_limits<float>::infinity();
-  EXPECT_NEAR(mc_.feedforwardLeft(inf), 1.0f, k_tol);
-  EXPECT_NEAR(mc_.feedforwardLeft(-inf), -1.0f, k_tol);
+  EXPECT_NEAR(mc_.feedforwardLeft(inf), 0.0f, k_tol);
+  EXPECT_NEAR(mc_.feedforwardLeft(-inf), 0.0f, k_tol);
+  EXPECT_NEAR(mc_.feedforwardRight(inf), 0.0f, k_tol);
 }
 
 TEST_F(MotorControlTest, FeedforwardUsesPerWheelParameters) {
@@ -118,7 +122,6 @@ TEST_F(MotorControlTest, UnconfiguredControllerOutputsZero) {
 }
 
 TEST_F(MotorControlTest, NanCommandDoesNotDrive) {
-  GTEST_SKIP() << "see #22";
   Gains g;
   g.min_duty_left = 0.2f;
   g.kp = 0.5f;
@@ -131,6 +134,8 @@ TEST_F(MotorControlTest, NanCommandDoesNotDrive) {
   const float nan = std::numeric_limits<float>::quiet_NaN();
   EXPECT_NEAR(mc_.feedforwardLeft(nan), 0.0f, k_tol);
   EXPECT_NEAR(mc_.computeDutyLeft(nan, 0.0f, 0.01f), 0.0f, k_tol);
+  EXPECT_NEAR(mc_.feedforwardRight(nan), 0.0f, k_tol);
+  EXPECT_NEAR(mc_.computeDutyRight(nan, 0.0f, 0.01f), 0.0f, k_tol);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -247,6 +252,39 @@ TEST_F(MotorControlTest, ZeroIntegralLimitDisablesIntegral) {
 
   mc_.computeDutyLeft(2.0f, 1.0f, 0.01f);
   EXPECT_NEAR(mc_.computeDutyLeft(2.0f, 1.0f, 0.01f), 0.20f, k_tol);
+}
+
+TEST_F(MotorControlTest, NonFiniteCommandStopsAndResetsIntegral) {
+  configure(integralGains());
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+
+  for (const float cmd : {nan, inf, -inf}) {
+    mc_.computeDutyLeft(2.0f, 1.0f, 0.01f);
+    mc_.computeDutyLeft(2.0f, 1.0f, 0.01f);
+    EXPECT_NEAR(mc_.computeDutyLeft(cmd, 1.0f, 0.01f), 0.0f, k_tol) << cmd;
+
+    // like a stop command: the integral (0.04) must not survive it, and a
+    // NaN must not latch into it at +integral_limit
+    EXPECT_NEAR(mc_.computeDutyLeft(2.0f, 1.0f, 0.01f), 0.20f, k_tol) << cmd;
+    mc_.reset();
+  }
+}
+
+TEST_F(MotorControlTest, NonFiniteVelocityStopsAndResetsIntegral) {
+  configure(integralGains());
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+
+  // the firmware divides the tick delta by dt, so dt == 0 gives inf (ticks
+  // moved) or NaN (0 / 0). Servoing on that would saturate the wheel
+  for (const float vel : {nan, inf, -inf}) {
+    mc_.computeDutyLeft(2.0f, 1.0f, 0.01f);
+    mc_.computeDutyLeft(2.0f, 1.0f, 0.01f);
+    EXPECT_NEAR(mc_.computeDutyLeft(2.0f, vel, 0.01f), 0.0f, k_tol) << vel;
+    EXPECT_NEAR(mc_.computeDutyLeft(2.0f, 1.0f, 0.01f), 0.20f, k_tol) << vel;
+    mc_.reset();
+  }
 }
 
 // +1 runs the scenario forwards, -1 mirrored backwards
