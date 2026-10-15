@@ -117,6 +117,94 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
   )
   target_link_libraries(test_params ${hardware_interface_TARGETS})
+
+  # drives the plugin through its lifecycle against a fake esp32 on a pty
+  # (test/fake_esp32.hpp). The failing handshake cases wait for their
+  # (shortened) timeout, the whole file takes a few seconds
+  ament_add_gtest(test_mobile_robot_hardware
+    test/test_mobile_robot_hardware.cpp
+    TIMEOUT 60
+    # the plugin creates a node, keep its DDS discovery on this machine
+    ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+  )
+  target_include_directories(test_mobile_robot_hardware PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+  # openpty() lives in libutil
+  target_link_libraries(test_mobile_robot_hardware ${PROJECT_NAME} util)
+
+  # encoder reports and the other incoming lines turned into joint states,
+  # same fake esp32 as above. The plugin creates a node: the isolated variant
+  # runs the test on its own ROS domain, kept on this machine
+  find_package(ament_cmake_ros REQUIRED)
+  ament_add_ros_isolated_gtest(test_encoder_state
+    test/test_encoder_state.cpp
+    TIMEOUT 60
+  )
+  target_include_directories(test_encoder_state PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+  target_link_libraries(test_encoder_state ${PROJECT_NAME} util)
+
+  # host tests for the hardware independent firmware code in esp32_firmware/inc/,
+  # the Arduino core is replaced by the controllable fake in test/arduino_stub
+  ament_add_gtest(test_arduino_stub test/firmware/test_arduino_stub.cpp)
+  target_include_directories(test_arduino_stub PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_motor_control test/firmware/test_motor_control.cpp)
+  target_include_directories(test_motor_control PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_scheduler test/firmware/test_scheduler.cpp)
+  target_include_directories(test_scheduler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_velocity test/firmware/test_velocity.cpp)
+  target_include_directories(test_velocity PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_drive test/firmware/test_drive.cpp)
+  target_include_directories(test_drive PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_l298 test/firmware/test_l298.cpp)
+  target_include_directories(test_l298 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_encoder test/firmware/test_encoder.cpp)
+  target_include_directories(test_encoder PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_serial_channel test/firmware/test_serial_channel.cpp)
+  target_include_directories(test_serial_channel PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
+
+  ament_add_gtest(test_messages test/firmware/test_messages.cpp)
+  target_include_directories(test_messages PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../esp32_firmware
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/arduino_stub
+  )
 endif()
 
 ament_package()

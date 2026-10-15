@@ -68,6 +68,17 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
     throw std::runtime_error("hardware parameter 'baud_rate' must be > 0");
   }
 
+  // optional: the default covers the esp32 booting, the tests shorten it so a
+  // failing handshake doesn't take seconds
+  if (p.count("handshake_timeout_ms") != 0) {
+    const uint32_t timeoutMs = parseParam<uint32_t>(p, "handshake_timeout_ms");
+    if (timeoutMs == 0) {
+      throw std::runtime_error(
+          "hardware parameter 'handshake_timeout_ms' must be > 0");
+    }
+    parsed.handshakeTimeout = std::chrono::milliseconds(timeoutMs);
+  }
+
   parsed.config.kp = parseParam<float>(p, "pid_kp");
   parsed.config.ki = parseParam<float>(p, "pid_ki");
   parsed.config.integral_limit = parseParam<float>(p, "pid_integral_limit");

@@ -25,6 +25,9 @@ MobileRobotHardware::on_init(const HardwareComponentInterfaceParams &params) {
     ParsedParams parsed = parseParams(info_.hardware_parameters);
     serialPort_ = std::move(parsed.serialPort);
     baudRate_ = parsed.baudRate;
+    handshake_ = Handshake(
+        k_config_retry_interval,
+        parsed.handshakeTimeout.value_or(k_default_handshake_timeout));
     config_.set(parsed.config);
   } catch (const std::runtime_error &e) {
     RCLCPP_ERROR(this->get_logger(), "%s", e.what());
@@ -475,6 +478,12 @@ void MobileRobotHardware::updateEncoderState_(const std::string &line) {
       warnIfFailed(rightVelocityState_->set_value(rightVelocity),
                    "right velocity");
     }
+  } else {
+    // no previous sample to measure against. Without this the velocity stays
+    // NaN (the interfaces' initial value) after activation, or keeps its value
+    // from before an esp32 restart
+    warnIfFailed(leftVelocityState_->set_value(0.0), "left velocity");
+    warnIfFailed(rightVelocityState_->set_value(0.0), "right velocity");
   }
 
   lastSampleTimeUs_ = timestampUs;

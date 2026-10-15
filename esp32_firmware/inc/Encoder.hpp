@@ -24,8 +24,8 @@ private:
 
 public:
   Encoder(uint8_t signal1_pin, uint8_t signal2_pin)
-      : tick_count_(0), signal1_pin_(signal1_pin), signal2_pin_(signal2_pin),
-        sign_(1) {}
+      : tick_count_(0), sign_(1), signal1_pin_(signal1_pin),
+        signal2_pin_(signal2_pin) {}
 
   Encoder(const Encoder &) = delete;
   Encoder &operator=(const Encoder &) = delete;

@@ -10,9 +10,11 @@
 #include <hardware_interface/hardware_info.hpp>
 #include <hardware_interface/lexical_casts.hpp>
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -31,6 +33,8 @@ void validateJoints(
 struct ParsedParams {
   std::string serialPort;
   uint32_t baudRate = 0;
+  // unset if the optional handshake_timeout_ms parameter is missing
+  std::optional<std::chrono::milliseconds> handshakeTimeout;
   protocol::ConfigPayload config;
 };
 
