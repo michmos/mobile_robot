@@ -22,47 +22,23 @@ ament_xmllint()
 set_tests_properties(xmllint PROPERTIES
   ENVIRONMENT "XML_CATALOG_FILES=${CMAKE_CURRENT_LIST_DIR}/xml_catalog.xml")
 
-# cppcheck runs here instead of through ament_lint_auto, for two reasons (#57):
+# cppcheck runs through ament_lint_auto, with two changes (#57):
 # - ament_cppcheck refuses cppcheck 1.88 and 2.x ("known performance issues")
 #   and then reports every file as skipped. Ubuntu 24.04 ships 2.13, which
-#   takes a few seconds on these packages, so allow it.
-# - test/ is not checked: cppcheck doesn't know the gtest macros (TEST, TEST_P)
-#   and parses test/arduino_stub/Arduino.h as C, which gives syntaxError false
-#   positives. ament_cmake_cppcheck_ADDITIONAL_EXCLUDE only suppresses the
-#   findings, the files would still be parsed and listed as checked.
-# The include dirs are collected from the package's targets like
-# ament_cmake_cppcheck's lint hook does, so the targets must exist: the call
-# is deferred to the end of the CMakeLists.txt. Packages without C/C++ files
-# outside test/ get no cppcheck test.
-list(APPEND AMENT_LINT_AUTO_EXCLUDE ament_cmake_cppcheck)
-function(_mobile_robot_lint_cppcheck)
-  file(GLOB_RECURSE _files RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
-    FOLLOW_SYMLINKS *.c *.cc *.cpp *.cxx *.h *.hh *.hpp *.hxx)
-  # test/, and like ament_cppcheck itself directories starting with . or _
-  list(FILTER _files EXCLUDE REGEX "^test/|(^|/)[._][^/]*/")
-  if(NOT _files)
-    return()
+#   takes a few seconds on these packages, so allow it. The cppcheck test only
+#   exists after ament_package(), so this is deferred to the end of the
+#   CMakeLists.txt. Packages without C/C++ files get no cppcheck test.
+# - Findings in test/ are suppressed: cppcheck doesn't know the gtest macros
+#   (TEST, TEST_P) and parses test/arduino_stub/Arduino.h as C, which gives
+#   syntaxError false positives. ament_cppcheck passes the pattern as
+#   --suppress=*:test/*, so it has to be relative (absolute paths have no
+#   effect). The test/ files are still parsed and listed as checked in the
+#   results, they just can't fail the test.
+set(ament_cmake_cppcheck_ADDITIONAL_EXCLUDE "test/*")
+function(_mobile_robot_lint_cppcheck_env)
+  if(TEST cppcheck)
+    set_property(TEST cppcheck APPEND PROPERTY
+      ENVIRONMENT "AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1")
   endif()
-  set(_include_dirs "")
-  get_directory_property(_targets BUILDSYSTEM_TARGETS)
-  foreach(_target IN LISTS _targets)
-    get_target_property(_type ${_target} TYPE)
-    if(_type STREQUAL "INTERFACE_LIBRARY")
-      get_target_property(_dirs ${_target} INTERFACE_INCLUDE_DIRECTORIES)
-    else()
-      get_target_property(_dirs ${_target} INCLUDE_DIRECTORIES)
-    endif()
-    foreach(_dir IN LISTS _dirs)
-      # only the package's own dirs, plain or as $<BUILD_INTERFACE:...>
-      if(_dir MATCHES "^(\\$<.*:)?${PROJECT_SOURCE_DIR}/")
-        list(APPEND _include_dirs "${_dir}")
-      endif()
-    endforeach()
-  endforeach()
-  list(REMOVE_DUPLICATES _include_dirs)
-  find_package(ament_cmake_cppcheck REQUIRED)
-  ament_cppcheck(${_files} INCLUDE_DIRS ${_include_dirs})
-  set_property(TEST cppcheck APPEND PROPERTY
-    ENVIRONMENT "AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1")
 endfunction()
-cmake_language(DEFER CALL _mobile_robot_lint_cppcheck)
+cmake_language(DEFER CALL _mobile_robot_lint_cppcheck_env)
