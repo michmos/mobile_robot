@@ -30,6 +30,8 @@ The defaults are the robot setup; a dev machine (no ESP32, lidar or foxglove) ru
 - `use_lidar` (default `true`) — start `xv_11_driver` on `/dev/ttyAMA0`.
 - `use_foxglove` (default `true`) — start `foxglove_bridge`.
 
+The controllers are started by a single `spawner` (`joint_state_broadcaster`, then `mobile_robot_controller`) with `--service-call-timeout 5.0`. Don't split it into one spawner per controller: spawners run one after the other (shared lock file), and each one's first service call can lose its response and wait for the timeout, so the stalls add up (#52).
+
 `mobile_robot_nodes/test/test_bringup.launch.py` runs exactly this dev setup under `launch_testing` and checks controllers, `/joint_states`, TF and the `/cmd_vel_joy` → twist_mux → controller → `/odom` path.
 
 ## Serial protocol (pi ↔ ESP32)

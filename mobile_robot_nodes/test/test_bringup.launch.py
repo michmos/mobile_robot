@@ -29,7 +29,7 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import String
 from tf2_ros import Buffer, TransformException, TransformListener
 
-# controller_manager loads the plugins and the spawners wait for it, this can
+# controller_manager loads the plugins and the spawner waits for it, this can
 # take a few seconds on a loaded CI machine
 STARTUP_TIMEOUT = 20.0
 TIMEOUT = 5.0
