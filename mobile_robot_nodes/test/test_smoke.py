@@ -364,6 +364,7 @@ def test_mobile_robot_launch_has_expected_nodes(tmp_path, monkeypatch):
     assert sorted(nodes(description)) == sorted([
         ('robot_state_publisher', 'robot_state_publisher', ()),
         ('controller_manager', 'ros2_control_node', ()),
+        ('mobile_robot', 'hardware_watchdog', ()),
         # one spawner, the broadcaster is activated first
         ('controller_manager', 'spawner',
          ('joint_state_broadcaster', 'mobile_robot_controller')),

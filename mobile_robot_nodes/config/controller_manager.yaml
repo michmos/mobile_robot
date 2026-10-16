@@ -4,7 +4,9 @@
 # esp32's own control loop.
 controller_manager:
   ros__parameters:
-    # abort ros2_control_node if the hardware (esp32 handshake) fails to start
+    # abort ros2_control_node if the hardware (esp32 handshake) fails to start.
+    # A failure after that (read() returns ERROR) only deactivates the
+    # hardware; the hardware_watchdog node then ends the launch (#2)
     hardware_components_initial_state:
       shutdown_on_initial_state_failure: true
 

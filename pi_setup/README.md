@@ -38,3 +38,5 @@ sudo systemctl reset-failed mobile_robot  # after the restart limit was hit
 ```
 
 The service gives up after 5 starts within 90 s (`StartLimit*` in the unit).
+
+The launch also ends (and the service restarts it) when the ESP32 hardware component leaves the `active` state at runtime, e.g. after a failed handshake: the `hardware_watchdog` node exits then, see "Hardware watchdog" in `OVERVIEW.md`. `ros2 launch` exits with code 0 in that case, hence `Restart=always`.
