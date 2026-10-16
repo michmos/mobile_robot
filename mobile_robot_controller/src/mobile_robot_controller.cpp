@@ -190,8 +190,8 @@ MobileRobotController::update(const rclcpp::Time &time,
     angularVel = lastCmdVel_->twist.angular.z;
   }
 
-  auto cmds = inverseKinematics(linearVel, angularVel, wheelSeparation_,
-                                wheelRadius_);
+  auto cmds =
+      inverseKinematics(linearVel, angularVel, wheelSeparation_, wheelRadius_);
   if (!command_interfaces_[LEFT].set_value(cmds.first) ||
       !command_interfaces_[RIGHT].set_value(cmds.second)) {
     RCLCPP_ERROR(get_node()->get_logger(),
