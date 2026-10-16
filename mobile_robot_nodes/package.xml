@@ -30,6 +30,7 @@
   <test_depend>launch_testing_ament_cmake</test_depend>
   <test_depend>rclpy</test_depend>
   <test_depend>controller_manager_msgs</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
   <test_depend>geometry_msgs</test_depend>
   <test_depend>nav_msgs</test_depend>
   <test_depend>sensor_msgs</test_depend>
@@ -54,6 +55,9 @@
   <exec_depend>xv_11_driver</exec_depend>
   <exec_depend>twist_mux</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
+  <!-- hardware_watchdog node -->
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

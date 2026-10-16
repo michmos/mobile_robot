@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Entry point of the hardware_watchdog node, see mobile_robot.hardware_watchdog."""
+
+import sys
+
+from mobile_robot.hardware_watchdog import main
+
+sys.exit(main())

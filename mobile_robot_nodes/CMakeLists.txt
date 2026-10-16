@@ -13,6 +13,13 @@ find_package(ament_cmake_python REQUIRED)
 
 ament_python_install_package(${PROJECT_NAME})
 
+# exits when a hardware component leaves 'active', see
+# mobile_robot/hardware_watchdog.py
+install(PROGRAMS
+  scripts/hardware_watchdog
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(DIRECTORY
   launch
   DESTINATION share/${PROJECT_NAME}/
@@ -50,6 +57,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_smoke test/test_smoke.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
+  ament_add_pytest_test(test_hardware_watchdog test/test_hardware_watchdog.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
   ament_add_pytest_test(test_robot_description test/test_robot_description.py)
   # Only builds the launch description, starts no node.
   ament_add_pytest_test(test_mobile_robot_launch
@@ -67,6 +77,14 @@ if(BUILD_TESTING)
   add_launch_test(test/test_bringup.launch.py
     TARGET test_bringup
     TIMEOUT 60
+    RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py"
+    ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+  )
+  # Runs `ros2 launch` as a child process and checks that it exits on its
+  # own once the hardware component is deactivated (what systemd sees).
+  add_launch_test(test/test_hardware_watchdog.launch.py
+    TARGET test_hardware_watchdog_launch
+    TIMEOUT 90
     RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py"
     ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
   )

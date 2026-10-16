@@ -79,8 +79,8 @@ def test_dev_machine_setup_starts_only_ros2_control_stack(launch_module):
     nodes = launch_nodes(launch_module, use_mock_hardware='true',
                          use_lidar='false', use_foxglove='false')
 
-    assert sorted(nodes) == ['robot_state_publisher', 'ros2_control_node',
-                             'spawner', 'twist_mux']
+    assert sorted(nodes) == ['hardware_watchdog', 'robot_state_publisher',
+                             'ros2_control_node', 'spawner', 'twist_mux']
 
 
 @pytest.mark.parametrize('use_mock_hardware, plugin', [

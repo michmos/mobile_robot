@@ -67,6 +67,16 @@ def launch_setup(context):
             output='both',
             on_exit=Shutdown(reason='ros2_control_node exited'),
         ),
+        # controller_manager takes a failed hardware component down but
+        # keeps running (e.g. esp32 handshake timeout while active, #2).
+        # The watchdog exits when a component leaves 'active', which ends
+        # the launch, so systemd restarts the whole stack.
+        Node(
+            package='mobile_robot',
+            executable='hardware_watchdog',
+            output='both',
+            on_exit=Shutdown(reason='hardware_watchdog exited'),
+        ),
         # One spawner for all controllers, activated in the listed order.
         # Separate spawners run one after the other (they share a lock
         # file), and each one's first service call can lose its response
