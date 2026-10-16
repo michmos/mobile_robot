@@ -67,17 +67,18 @@ def launch_setup(context):
             output='both',
             on_exit=Shutdown(reason='ros2_control_node exited'),
         ),
-        # Spawn controllers
+        # One spawner for all controllers, activated in the listed order.
+        # Separate spawners run one after the other (they share a lock
+        # file), and each one's first service call can lose its response
+        # (discovery race), so the stalls would add up.
+        # --service-call-timeout: retry a lost response after 5 s instead
+        # of the default 10 s. Not lower than the spawner's 5 s
+        # --switch-timeout, so a slow activation isn't sent a second time.
         Node(
             package='controller_manager',
             executable='spawner',
-            arguments=['joint_state_broadcaster'],
-            output='screen',
-        ),
-        Node(
-            package='controller_manager',
-            executable='spawner',
-            arguments=['mobile_robot_controller'],
+            arguments=['joint_state_broadcaster', 'mobile_robot_controller',
+                       '--service-call-timeout', '5.0'],
             output='screen',
         ),
         Node(
