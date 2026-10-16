@@ -26,3 +26,7 @@ ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently th
 - Pi-side node classes use camelCase for members, trailing underscore for private variables, e.g. `dutyCycle_`, and lambda callbacks stored as `sub_`/`pub_`/`timer_`; keep new nodes consistent with this pattern.
 - ESP32 firmware peripherals are wrapped in small non-copyable classes under `esp32_firmware/inc/` (`L298N`, `Encoder`) — copy/assignment is explicitly deleted since they own hardware pins.
 - URDF is built with xacro macros: `mobile_robot_nodes/description/mobile_robot.urdf.xacro` includes `properties.xacro` (dimensions/masses), `materials.xacro`, and `intertial_macros.xacro` (inertia tensor helpers). Add new physical properties to `properties.xacro` rather than inlining constants in the URDF.
+
+## Pull requests
+- Every PR description must follow `.github/pull_request_template.md`: fill in every section (write "None" or "No test changes" where that applies), and keep the template's headings.
+- `gh pr create --fill` and `--body` bypass GitHub's template, so pass the filled template via `--body-file` (or a `--body` built from it) when creating a PR with `gh`.
