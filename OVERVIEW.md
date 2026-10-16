@@ -14,6 +14,7 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`.
 - **`lint/`** — linter setup shared by the three packages' `colcon test` (`lint.cmake`): C++ style via `ament_clang_format` with the repo's `.clang-format` instead of uncrustify, and xmllint validating `package.xml` against a local schema copy so no network is needed.
 - **`docker/Dockerfile.ros2`** — ROS 2 kilted + arduino-cli image used by CI and the agent sandbox (not by the robot).
+- **`.github/pull_request_template.md`** — PR description template; every PR fills in all its sections (see "Pull requests" in `CLAUDE.md`).
 
 ## CI
 CI runs in a prebuilt image instead of building `docker/Dockerfile.ros2` on every run:
