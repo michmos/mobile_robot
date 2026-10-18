@@ -79,10 +79,10 @@ public:
                                received.slope_left, received.slope_right,
                                received.kp, received.ki,
                                received.integral_limit);
-    motorDriver_.setInverted1(received.invert_left);
-    motorDriver_.setInverted2(received.invert_right);
-    encoderLeft_.setInverted(received.invert_left);
-    encoderRight_.setInverted(received.invert_right);
+    motorDriver_.setInverted1(received.invert_motor_left);
+    motorDriver_.setInverted2(received.invert_motor_right);
+    encoderLeft_.setInverted(received.invert_encoder_left);
+    encoderRight_.setInverted(received.invert_encoder_right);
 
     config_ = received;
 

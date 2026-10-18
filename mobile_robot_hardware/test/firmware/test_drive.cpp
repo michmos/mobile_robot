@@ -69,8 +69,10 @@ protected:
         std::to_string(p.watchdog_timeout_ms) + "," +
         std::to_string(p.control_rate_hz) + "," +
         std::to_string(p.report_rate_hz) + "," +
-        std::to_string(p.invert_left ? 1 : 0) + "," +
-        std::to_string(p.invert_right ? 1 : 0);
+        std::to_string(p.invert_motor_left ? 1 : 0) + "," +
+        std::to_string(p.invert_motor_right ? 1 : 0) + "," +
+        std::to_string(p.invert_encoder_left ? 1 : 0) + "," +
+        std::to_string(p.invert_encoder_right ? 1 : 0);
     char crc[8];
     snprintf(crc, sizeof(crc), ",%04X",
              protocol::crc16(line.c_str(), line.size()));
@@ -220,9 +222,9 @@ TEST_F(DriveTest, UpdateConfigBrakesAndResetsTheIntegrators) {
   EXPECT_NEAR(duty(k_channelRight), 0.2f, k_dutyTol);
 }
 
-TEST_F(DriveTest, UpdateConfigAppliesTheInversion) {
+TEST_F(DriveTest, UpdateConfigAppliesTheMotorInversion) {
   protocol::ConfigPayload p = defaultPayload();
-  p.invert_left = true;
+  p.invert_motor_left = true;
   ASSERT_TRUE(receiveConfig(1, p));
   receiveCmd("2.0", "2.0");
   updateMotor(0, 0, 0);
@@ -232,13 +234,33 @@ TEST_F(DriveTest, UpdateConfigAppliesTheInversion) {
   EXPECT_EQ(arduino_stub::digitalWritten(k_in2), HIGH);
   EXPECT_TRUE(rightForwards());
 
-  // and its encoder counts the other way
+  // its encoder is wired on its own and still counts the normal way
   arduino_stub::setDigitalRead(k_enc1b, LOW);
   arduino_stub::setDigitalRead(k_enc2b, LOW);
   ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc1a));
   ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc2a));
-  EXPECT_EQ(encoderLeft_.get_tick_count(), -1);
+  EXPECT_EQ(encoderLeft_.get_tick_count(), 1);
   EXPECT_EQ(encoderRight_.get_tick_count(), 1);
+}
+
+TEST_F(DriveTest, UpdateConfigAppliesTheEncoderInversion) {
+  protocol::ConfigPayload p = defaultPayload();
+  p.invert_encoder_right = true;
+  ASSERT_TRUE(receiveConfig(1, p));
+  receiveCmd("2.0", "2.0");
+  updateMotor(0, 0, 0);
+
+  // the right encoder counts the other way
+  arduino_stub::setDigitalRead(k_enc1b, LOW);
+  arduino_stub::setDigitalRead(k_enc2b, LOW);
+  ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc1a));
+  ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc2a));
+  EXPECT_EQ(encoderLeft_.get_tick_count(), 1);
+  EXPECT_EQ(encoderRight_.get_tick_count(), -1);
+
+  // the motors keep their direction
+  EXPECT_TRUE(leftForwards());
+  EXPECT_TRUE(rightForwards());
 }
 
 // ---- updateMotor() ----

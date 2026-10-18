@@ -69,7 +69,8 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         ParamCase{"missing serial_port", "serial_port", std::nullopt},
         ParamCase{"missing pid_kp", "pid_kp", std::nullopt},
-        ParamCase{"missing invert_right", "invert_right", std::nullopt},
+        ParamCase{"missing invert_encoder_right", "invert_encoder_right",
+                  std::nullopt},
         ParamCase{"malformed pid_ki", "pid_ki", "abc"},
         ParamCase{"empty ff_slope_right", "ff_slope_right", ""},
         ParamCase{"zero baud_rate", "baud_rate", "0"},
@@ -193,8 +194,10 @@ TEST_F(MobileRobotHardwareTest, ConfigLineCarriesParameters) {
                 {"watchdog_timeout_ms", "300"},
                 {"control_rate_hz", "500"},
                 {"report_rate_hz", "100"},
-                {"invert_left", "false"},
-                {"invert_right", "true"},
+                {"invert_motor_left", "false"},
+                {"invert_motor_right", "true"},
+                {"invert_encoder_left", "true"},
+                {"invert_encoder_right", "false"},
             })),
             CallbackReturn::SUCCESS);
   ASSERT_EQ(hw_->on_configure(k_unconfigured), CallbackReturn::SUCCESS);
@@ -215,8 +218,10 @@ TEST_F(MobileRobotHardwareTest, ConfigLineCarriesParameters) {
   EXPECT_EQ(config.watchdog_timeout_ms, 300u);
   EXPECT_EQ(config.control_rate_hz, 500u);
   EXPECT_EQ(config.report_rate_hz, 100u);
-  EXPECT_FALSE(config.invert_left);
-  EXPECT_TRUE(config.invert_right);
+  EXPECT_FALSE(config.invert_motor_left);
+  EXPECT_TRUE(config.invert_motor_right);
+  EXPECT_TRUE(config.invert_encoder_left);
+  EXPECT_FALSE(config.invert_encoder_right);
 }
 
 ///////////////////////////////////////////////////////////////////////////////

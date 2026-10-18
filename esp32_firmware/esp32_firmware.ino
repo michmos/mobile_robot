@@ -11,21 +11,22 @@
 // Pins
 //////////////////////////////////////////////////////////////////////////////////
 // TODO: double check pins
-// Motor driver
-#define ENA_PIN 15
-#define IN1_PIN 2
-#define IN2_PIN 4
+// Motor driver, L298N board labels in the comments. The right wheel is on
+// output A, the left wheel on output B
+#define LEFT_EN_PIN 5    // ENB
+#define LEFT_IN1_PIN 16  // IN3
+#define LEFT_IN2_PIN 17  // IN4
 
-#define IN3_PIN 16
-#define IN4_PIN 17
-#define ENB_PIN 5
+#define RIGHT_EN_PIN 15  // ENA
+#define RIGHT_IN1_PIN 2  // IN1
+#define RIGHT_IN2_PIN 4  // IN2
 
 // Motor encoder
-#define ENCODER1_SIGNAL1 18
-#define ENCODER1_SIGNAL2 19
+#define LEFT_ENCODER_SIGNAL1 22
+#define LEFT_ENCODER_SIGNAL2 23
 
-#define ENCODER2_SIGNAL1 22
-#define ENCODER2_SIGNAL2 23
+#define RIGHT_ENCODER_SIGNAL1 18
+#define RIGHT_ENCODER_SIGNAL2 19
 
 //////////////////////////////////////////////////////////////////////////////////
 // Globals
@@ -38,12 +39,14 @@ const uint8_t k_pwm_res = 16;
 portMUX_TYPE g_encoder_mux = portMUX_INITIALIZER_UNLOCKED;
 
 SerialChannel g_sc;
-L298N g_motorDriver(ENA_PIN, IN1_PIN, IN2_PIN, ENB_PIN, IN3_PIN, IN4_PIN, k_pwm_res);
-Encoder g_encoder1(ENCODER1_SIGNAL1, ENCODER1_SIGNAL2);
-Encoder g_encoder2(ENCODER2_SIGNAL1, ENCODER2_SIGNAL2);
+// motor 1 of the driver is the left wheel, motor 2 the right one (Drive.hpp)
+L298N g_motorDriver(LEFT_EN_PIN, LEFT_IN1_PIN, LEFT_IN2_PIN, RIGHT_EN_PIN,
+                    RIGHT_IN1_PIN, RIGHT_IN2_PIN, k_pwm_res);
+Encoder g_encoderLeft(LEFT_ENCODER_SIGNAL1, LEFT_ENCODER_SIGNAL2);
+Encoder g_encoderRight(RIGHT_ENCODER_SIGNAL1, RIGHT_ENCODER_SIGNAL2);
 MotorControl g_motorController;
 // config update, command watchdog and FF + PI control, see inc/Drive.hpp
-Drive g_drive(g_sc, g_motorDriver, g_encoder1, g_encoder2, g_motorController);
+Drive g_drive(g_sc, g_motorDriver, g_encoderLeft, g_encoderRight, g_motorController);
 
 //////////////////////////////////////////////////////////////////////////////////
 // Sensor data
@@ -55,8 +58,8 @@ EncoderSample
 sampleEncoders() {
   EncoderSample s;
   portENTER_CRITICAL(&g_encoder_mux);
-  s.left_ticks = g_encoder1.get_tick_count();
-  s.right_ticks = g_encoder2.get_tick_count();
+  s.left_ticks = g_encoderLeft.get_tick_count();
+  s.right_ticks = g_encoderRight.get_tick_count();
   s.us = micros();
   portEXIT_CRITICAL(&g_encoder_mux);
   return s;
@@ -97,8 +100,8 @@ void awaitConfig() {
 void setup() {
   Serial.begin(115200);
   g_motorDriver.setup();
-  g_encoder1.setup();
-  g_encoder2.setup();
+  g_encoderLeft.setup();
+  g_encoderRight.setup();
   g_motorDriver.brake();
 
   awaitConfig();

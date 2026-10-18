@@ -24,7 +24,7 @@ std::string sign(const std::string &body) {
 // a config line that passes the CRC and range check, without line ending
 std::string validConfig(uint32_t handshakeId, const std::string &kp = "0.5") {
   return sign("C," + std::to_string(handshakeId) + "," + kp +
-              ",1,0.4,0.1,0.1,0.1,0.1,480,200,200,50,0,1");
+              ",1,0.4,0.1,0.1,0.1,0.1,480,200,200,50,0,1,1,0");
 }
 
 class SerialChannelTest : public ::testing::Test {
@@ -184,7 +184,10 @@ TEST_F(SerialChannelTest, ValidConfigIsAckedAndStored) {
   EXPECT_TRUE(sc_.getConfig().initialized);
   EXPECT_EQ(sc_.getConfig().handshake_id, 42u);
   EXPECT_NEAR(sc_.getConfig().kp, 0.5f, k_tol);
-  EXPECT_TRUE(sc_.getConfig().invert_right);
+  EXPECT_FALSE(sc_.getConfig().invert_motor_left);
+  EXPECT_TRUE(sc_.getConfig().invert_motor_right);
+  EXPECT_TRUE(sc_.getConfig().invert_encoder_left);
+  EXPECT_FALSE(sc_.getConfig().invert_encoder_right);
 }
 
 TEST_F(SerialChannelTest, ResentConfigIsAckedAgain) {

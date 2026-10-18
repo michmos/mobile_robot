@@ -119,8 +119,10 @@ void expectSamePayload(const protocol::ConfigPayload &a,
   EXPECT_EQ(a.watchdog_timeout_ms, b.watchdog_timeout_ms);
   EXPECT_EQ(a.control_rate_hz, b.control_rate_hz);
   EXPECT_EQ(a.report_rate_hz, b.report_rate_hz);
-  EXPECT_EQ(a.invert_left, b.invert_left);
-  EXPECT_EQ(a.invert_right, b.invert_right);
+  EXPECT_EQ(a.invert_motor_left, b.invert_motor_left);
+  EXPECT_EQ(a.invert_motor_right, b.invert_motor_right);
+  EXPECT_EQ(a.invert_encoder_left, b.invert_encoder_left);
+  EXPECT_EQ(a.invert_encoder_right, b.invert_encoder_right);
 }
 
 // the config line without its ",<crc>" suffix
@@ -151,8 +153,10 @@ protocol::ConfigPayload samplePayload() {
   p.watchdog_timeout_ms = 250;
   p.control_rate_hz = 400;
   p.report_rate_hz = 100;
-  p.invert_left = true;
-  p.invert_right = false;
+  p.invert_motor_left = true;
+  p.invert_motor_right = false;
+  p.invert_encoder_left = false;
+  p.invert_encoder_right = true;
   return p;
 }
 
@@ -169,9 +173,9 @@ TEST(SerializeConfig, Format) {
   EXPECT_EQ(line.rfind("C,123,", 0), 0u) << line;
   ASSERT_FALSE(line.empty());
   EXPECT_EQ(line.back(), '\n');
-  EXPECT_EQ(std::count(line.begin(), line.end(), ','), 15) << line;
+  EXPECT_EQ(std::count(line.begin(), line.end(), ','), 17) << line;
   // booleans as 0/1, then the checksum
-  EXPECT_NE(line.find(",1,0,"), std::string::npos) << line;
+  EXPECT_NE(line.find(",1,0,0,1,"), std::string::npos) << line;
   // CRC as 4 uppercase hex digits over everything before its comma
   EXPECT_EQ(stripNewline(line), sign(bodyOf(line))) << line;
 }
@@ -230,7 +234,7 @@ TEST(FirmwareConfigParser, RejectsMalformedLines) {
            sign("C,4294967296" + afterId),              // id above UINT32_MAX
            sign(withoutLastField),                      // missing field
            sign(body + ",1"),                           // extra field
-           sign(body.substr(0, body.size() - 1) + "2"), // invert_right not 0/1
+           sign(body.substr(0, body.size() - 1) + "2"), // last bool not 0/1
        }) {
     msgs::Config parsed;
     EXPECT_EQ(parsed.init(line), -1) << line;
@@ -389,8 +393,18 @@ TEST(SamePayload, ComparesEveryField) {
       [](protocol::ConfigPayload &p) { ++p.watchdog_timeout_ms; },
       [](protocol::ConfigPayload &p) { ++p.control_rate_hz; },
       [](protocol::ConfigPayload &p) { ++p.report_rate_hz; },
-      [](protocol::ConfigPayload &p) { p.invert_left = !p.invert_left; },
-      [](protocol::ConfigPayload &p) { p.invert_right = !p.invert_right; },
+      [](protocol::ConfigPayload &p) {
+        p.invert_motor_left = !p.invert_motor_left;
+      },
+      [](protocol::ConfigPayload &p) {
+        p.invert_motor_right = !p.invert_motor_right;
+      },
+      [](protocol::ConfigPayload &p) {
+        p.invert_encoder_left = !p.invert_encoder_left;
+      },
+      [](protocol::ConfigPayload &p) {
+        p.invert_encoder_right = !p.invert_encoder_right;
+      },
   };
   for (size_t i = 0; i < changes.size(); ++i) {
     protocol::ConfigPayload changed = base;

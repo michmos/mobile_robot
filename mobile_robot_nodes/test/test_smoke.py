@@ -47,8 +47,10 @@ HARDWARE_PARAMS = {
     'watchdog_timeout_ms',
     'control_rate_hz',
     'report_rate_hz',
-    'invert_left',
-    'invert_right',
+    'invert_motor_left',
+    'invert_motor_right',
+    'invert_encoder_left',
+    'invert_encoder_right',
 }
 
 # Params parseParams() reads only if present (with a default otherwise).

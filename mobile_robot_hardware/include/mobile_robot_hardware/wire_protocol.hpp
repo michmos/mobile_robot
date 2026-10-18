@@ -21,7 +21,7 @@ inline constexpr char k_nack_prefix[] = "S,NACK,";
 inline constexpr char k_log_prefix[] = "L,";
 inline constexpr char k_encoder_prefix[] = "E,";
 
-// C,<handshake_id>,<kp>,...,<invert_right>,<crc>\n
+// C,<handshake_id>,<kp>,...,<invert_encoder_right>,<crc>\n
 // floats are written with enough digits that the esp32 parses back exactly
 // the value the pi validated, <crc> lets it detect a corrupted line
 std::string serializeConfig(const protocol::ConfigPayload &payload,
