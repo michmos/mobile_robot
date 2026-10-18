@@ -54,8 +54,10 @@ inline Params xacroDefaults() {
       {"watchdog_timeout_ms", "200"},
       {"control_rate_hz", "200"},
       {"report_rate_hz", "50"},
-      {"invert_left", "true"},
-      {"invert_right", "false"},
+      {"invert_motor_left", "false"},
+      {"invert_motor_right", "false"},
+      {"invert_encoder_left", "true"},
+      {"invert_encoder_right", "false"},
   };
 }
 

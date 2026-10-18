@@ -56,8 +56,10 @@ protocol::ConfigPayload validPayload() {
   p.watchdog_timeout_ms = 250;
   p.control_rate_hz = 400;
   p.report_rate_hz = 100;
-  p.invert_left = true;
-  p.invert_right = false;
+  p.invert_motor_left = true;
+  p.invert_motor_right = false;
+  p.invert_encoder_left = false;
+  p.invert_encoder_right = true;
   return p;
 }
 
@@ -397,7 +399,7 @@ TEST(StatusLines, EncoderDataStartsWithPiPrefix) {
 TEST(GoldenLines, ConfigFieldOrder) {
   EXPECT_EQ(serializeConfig(validPayload(), 123),
             "C,123,0.349999994,1.5,0.25,0.0125000002,0.0250000004,"
-            "0.100000001,0.200000003,1320,250,400,100,1,0,9A40\n");
+            "0.100000001,0.200000003,1320,250,400,100,1,0,0,1,6BB9\n");
 }
 
 TEST(GoldenLines, MotorCmdFieldOrder) {
@@ -454,11 +456,11 @@ TEST_P(CrcBitFlip, RejectsEveryBitOfByte) {
   }
 }
 
-// "C,123,0.349999994,1.5,...,1,0,9A40": positions in the id, a float digit,
+// "C,123,0.349999994,1.5,...,1,0,0,1,6BB9": positions in the id, a float digit,
 // a separating comma, an integer field and the last payload byte. Position 0
 // (the 'C') is left out, a different letter is not a config line at all
 INSTANTIATE_TEST_SUITE_P(Positions, CrcBitFlip,
-                         ::testing::Values(2u, 8u, 17u, 82u, 96u));
+                         ::testing::Values(2u, 8u, 17u, 82u, 100u));
 
 } // namespace
 
@@ -468,10 +470,10 @@ INSTANTIATE_TEST_SUITE_P(Positions, CrcBitFlip,
 
 namespace {
 
-// fields of a config line: C,<id>,<8 floats>,<3 uint16>,<2 bools>,<crc>
-constexpr size_t k_field_handshake_id = 1; // parseUInt32_
-constexpr size_t k_field_watchdog = 10;    // parseUInt16_
-constexpr size_t k_field_invert_left = 13; // parseBool_
+// fields of a config line: C,<id>,<8 floats>,<3 uint16>,<4 bools>,<crc>
+constexpr size_t k_field_handshake_id = 1;       // parseUInt32_
+constexpr size_t k_field_watchdog = 10;          // parseUInt16_
+constexpr size_t k_field_invert_motor_left = 13; // parseBool_
 
 struct ParserCase {
   const char *name;
@@ -519,17 +521,17 @@ const ParserCase k_parser_cases[] = {
     {"uint16_float", k_field_watchdog, "200.0", "malformed", 0},
     {"uint16_exponent", k_field_watchdog, "2e2", "malformed", 0},
 
-    // parseBool_ (invert_left)
-    {"bool_zero", k_field_invert_left, "0", nullptr, 0},
-    {"bool_one", k_field_invert_left, "1", nullptr, 1},
-    {"bool_leading_zero", k_field_invert_left, "01", nullptr, 1},
-    {"bool_plus_sign", k_field_invert_left, "+1", nullptr, 1},
-    {"bool_two", k_field_invert_left, "2", "malformed", 0},
-    {"bool_minus_one", k_field_invert_left, "-1", "malformed", 0},
+    // parseBool_ (invert_motor_left)
+    {"bool_zero", k_field_invert_motor_left, "0", nullptr, 0},
+    {"bool_one", k_field_invert_motor_left, "1", nullptr, 1},
+    {"bool_leading_zero", k_field_invert_motor_left, "01", nullptr, 1},
+    {"bool_plus_sign", k_field_invert_motor_left, "+1", nullptr, 1},
+    {"bool_two", k_field_invert_motor_left, "2", "malformed", 0},
+    {"bool_minus_one", k_field_invert_motor_left, "-1", "malformed", 0},
     // 65537 would be 1 after a narrowing to uint16_t
-    {"bool_overflow", k_field_invert_left, "65537", "malformed", 0},
-    {"bool_word", k_field_invert_left, "true", "malformed", 0},
-    {"bool_empty", k_field_invert_left, "", "malformed", 0},
+    {"bool_overflow", k_field_invert_motor_left, "65537", "malformed", 0},
+    {"bool_word", k_field_invert_motor_left, "true", "malformed", 0},
+    {"bool_empty", k_field_invert_motor_left, "", "malformed", 0},
 };
 
 class FirmwareNumberParser : public ::testing::TestWithParam<ParserCase> {};
@@ -539,7 +541,7 @@ TEST_P(FirmwareNumberParser, ParsesField) {
   std::vector<std::string> fields =
       splitFields(stripNewline(serializeConfig(validPayload(), 9)));
   fields.pop_back(); // the crc, recomputed below
-  ASSERT_EQ(fields.size(), 15u);
+  ASSERT_EQ(fields.size(), 17u);
   fields[c.field] = c.text;
   const std::string line = sign(joinFields(fields));
 
@@ -559,8 +561,8 @@ TEST_P(FirmwareNumberParser, ParsesField) {
   case k_field_watchdog:
     EXPECT_EQ(parsed.watchdog_timeout_ms, c.value);
     break;
-  case k_field_invert_left:
-    EXPECT_EQ(parsed.invert_left, c.value == 1);
+  case k_field_invert_motor_left:
+    EXPECT_EQ(parsed.invert_motor_left, c.value == 1);
     break;
   default:
     FAIL() << "no getter for field " << c.field;

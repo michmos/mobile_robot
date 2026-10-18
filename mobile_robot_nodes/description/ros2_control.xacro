@@ -40,8 +40,13 @@
         <param name="control_rate_hz">200</param>
         <param name="report_rate_hz">50</param>
 
-        <param name="invert_left">true</param>
-        <param name="invert_right">false</param>
+        <!-- direction fixes for the wiring, motor and encoder separately: a
+             forward command must turn the wheel forwards, and a wheel turning
+             forwards must report a positive velocity -->
+        <param name="invert_motor_left">false</param>
+        <param name="invert_motor_right">false</param>
+        <param name="invert_encoder_left">true</param>
+        <param name="invert_encoder_right">false</param>
       </xacro:unless>
     </hardware>
 

@@ -62,9 +62,12 @@ struct ConfigPayload {
   uint16_t report_rate_hz = 50;       // EncoderData publish rate
 
   // sign conventions - the two motors are mounted mirrored, so "forwards" is
-  // opposite rotation on each side
-  bool invert_left = false;
-  bool invert_right = false;
+  // opposite rotation on each side. Motor and encoder are wired separately,
+  // so each gets its own flag
+  bool invert_motor_left = false;
+  bool invert_motor_right = false;
+  bool invert_encoder_left = false;
+  bool invert_encoder_right = false;
 };
 
 // fields of ConfigPayload, ordered as they appear on the wire
@@ -126,7 +129,10 @@ inline bool samePayload(const ConfigPayload &a, const ConfigPayload &b) {
          a.watchdog_timeout_ms == b.watchdog_timeout_ms &&
          a.control_rate_hz == b.control_rate_hz &&
          a.report_rate_hz == b.report_rate_hz &&
-         a.invert_left == b.invert_left && a.invert_right == b.invert_right;
+         a.invert_motor_left == b.invert_motor_left &&
+         a.invert_motor_right == b.invert_motor_right &&
+         a.invert_encoder_left == b.invert_encoder_left &&
+         a.invert_encoder_right == b.invert_encoder_right;
 }
 
 // range check of a configuration

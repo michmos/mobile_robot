@@ -96,8 +96,12 @@ parseParams(const std::unordered_map<std::string, std::string> &p) {
   parsed.config.control_rate_hz = parseParam<uint16_t>(p, "control_rate_hz");
   parsed.config.report_rate_hz = parseParam<uint16_t>(p, "report_rate_hz");
 
-  parsed.config.invert_left = parseParam<bool>(p, "invert_left");
-  parsed.config.invert_right = parseParam<bool>(p, "invert_right");
+  parsed.config.invert_motor_left = parseParam<bool>(p, "invert_motor_left");
+  parsed.config.invert_motor_right = parseParam<bool>(p, "invert_motor_right");
+  parsed.config.invert_encoder_left =
+      parseParam<bool>(p, "invert_encoder_left");
+  parsed.config.invert_encoder_right =
+      parseParam<bool>(p, "invert_encoder_right");
 
   // the same check the firmware runs on the received Config message, so a bad
   // value fails at load time rather than as a NACK once the port is open

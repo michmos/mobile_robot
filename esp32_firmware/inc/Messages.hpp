@@ -119,7 +119,8 @@ public:
 // C,<handshake_id>,<kp>,<ki>,<integral_limit>,<slope_left>,<slope_right>,
 //   <min_duty_left>,<min_duty_right>,<ticks_per_wheel_rev>,
 //   <watchdog_timeout_ms>,<control_rate_hz>,<report_rate_hz>,
-//   <invert_left>,<invert_right>,<crc>\n
+//   <invert_motor_left>,<invert_motor_right>,<invert_encoder_left>,
+//   <invert_encoder_right>,<crc>\n
 //
 // <crc> is the CRC-16 (Crc16.hpp) of everything before its comma, as 4
 // uppercase hex digits. A config that passes it is exactly what the pi sent,
@@ -175,8 +176,10 @@ public:
     parsed.watchdog_timeout_ms = parseUInt16_(strtok(NULL, ","), &errFlag);
     parsed.control_rate_hz = parseUInt16_(strtok(NULL, ","), &errFlag);
     parsed.report_rate_hz = parseUInt16_(strtok(NULL, ","), &errFlag);
-    parsed.invert_left = parseBool_(strtok(NULL, ","), &errFlag);
-    parsed.invert_right = parseBool_(strtok(NULL, ","), &errFlag);
+    parsed.invert_motor_left = parseBool_(strtok(NULL, ","), &errFlag);
+    parsed.invert_motor_right = parseBool_(strtok(NULL, ","), &errFlag);
+    parsed.invert_encoder_left = parseBool_(strtok(NULL, ","), &errFlag);
+    parsed.invert_encoder_right = parseBool_(strtok(NULL, ","), &errFlag);
 
     // check for error during parsing and remaining tokens
     if (errFlag || strtok(NULL, ",") != NULL) {

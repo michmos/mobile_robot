@@ -47,8 +47,10 @@ ParamMap validParams() {
       {"watchdog_timeout_ms", "200"},
       {"control_rate_hz", "200"},
       {"report_rate_hz", "50"},
-      {"invert_left", "true"},
-      {"invert_right", "false"},
+      {"invert_motor_left", "false"},
+      {"invert_motor_right", "false"},
+      {"invert_encoder_left", "true"},
+      {"invert_encoder_right", "false"},
   };
 }
 
@@ -193,8 +195,10 @@ TEST(ParseParams, ValidMapGivesExpectedStruct) {
   EXPECT_EQ(parsed.config.watchdog_timeout_ms, 200u);
   EXPECT_EQ(parsed.config.control_rate_hz, 200u);
   EXPECT_EQ(parsed.config.report_rate_hz, 50u);
-  EXPECT_TRUE(parsed.config.invert_left);
-  EXPECT_FALSE(parsed.config.invert_right);
+  EXPECT_FALSE(parsed.config.invert_motor_left);
+  EXPECT_FALSE(parsed.config.invert_motor_right);
+  EXPECT_TRUE(parsed.config.invert_encoder_left);
+  EXPECT_FALSE(parsed.config.invert_encoder_right);
 }
 
 TEST(ParseParams, BaudRateZeroThrows) {
