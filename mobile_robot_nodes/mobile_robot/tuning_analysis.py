@@ -74,21 +74,50 @@ def mean_velocity(samples, max_rate=None):
     Far more accurate than averaging the reported velocities, which are
     quantized to one encoder tick per report (~0.65 rad/s at 50 Hz).
 
+    /joint_states comes at the controller rate (200 Hz), but the position
+    only changes with each esp32 report (50 Hz): it holds for ~4 samples,
+    then steps by a whole report's motion within one sample interval. So
+    with max_rate the rate is judged from one position change to the next,
+    not per sample, else every step looks ~4x too fast.
+
+    Only the span from the first to the last change is used. Before the
+    first change and after the last one the position holds for an unknown
+    part of a report period, counting them would bias the speed (the
+    first change brings a whole report's motion after less than a period).
+    From change to change the intervals are whole report periods, so the
+    estimate is unbiased, the window just loses up to two report periods.
+    With a single change there is no such interval, then the whole window
+    is used (a wheel this slow is stalled anyway).
+
     :param samples: [(time s, position rad)] in time order
-    :param max_rate: rad/s, intervals faster than this are a jump of the
-        position (not motion) and left out, None keeps all
-    :returns float: rad/s, None with fewer than two samples or no time passed
+    :param max_rate: rad/s, a change faster than this is a jump of the
+        position (not motion) and left out, None keeps all and uses the
+        first and last sample
+    :returns float: rad/s, 0.0 if the position never changed (the wheel
+        stands), None with fewer than two samples, no time passed or only
+        jumps
     """
     if len(samples) < 2:
         return None
+    (t_first, pos_first), (t_last, pos_last) = samples[0], samples[-1]
+    if not t_last > t_first:
+        return None
     if max_rate is None:
-        (t_first, pos_first), (t_last, pos_last) = samples[0], samples[-1]
-        if not t_last > t_first:
-            return None
         return (pos_last - pos_first) / (t_last - t_first)
+    valid = [(t, p) for t, p in samples if math.isfinite(p)]
+    if not valid:
+        return None
+    changes = [(t1, p1) for (_, p0), (t1, p1) in zip(valid, valid[1:])
+               if p1 != p0]
+    if not changes:
+        return 0.0
+    if len(changes) == 1:
+        intervals = [((t_first, valid[0][1]), (t_last, changes[0][1]))]
+    else:
+        intervals = zip(changes, changes[1:])
     distance = 0.0
     duration = 0.0
-    for (t0, p0), (t1, p1) in zip(samples, samples[1:]):
+    for (t0, p0), (t1, p1) in intervals:
         dt = t1 - t0
         if not dt > 0.0 or abs(p1 - p0) > max_rate * dt:
             continue
@@ -409,19 +438,31 @@ def joint_velocity_limit(urdf, joint_names):
     return min(limits.values())
 
 
-def smooth(values, window):
+def smooth(times, values, window):
     """
-    Centered moving average, the window shrinks at the edges.
+    Centered moving average over window s, the window shrinks at the edges.
 
-    Centered so the smoothing doesn't add lag to the rise time.
+    Centered so the smoothing doesn't add lag to the rise time. Over time,
+    not a number of samples: /joint_states (200 Hz) repeats each esp32
+    report (50 Hz) ~4 times, so a window of samples would span ~4x fewer
+    reports than intended.
+
+    :param times: s, in order, one per value
+    :param window: s, samples within window / 2 of a sample are averaged
     """
-    if window < 1:
-        raise ValueError(f'window must be >= 1, got {window}')
-    half = window // 2
+    if not window > 0.0:
+        raise ValueError(f'window must be > 0, got {window}')
+    if len(times) != len(values):
+        raise ValueError('times and values must have equal size')
+    half = window / 2.0
     out = []
-    for i in range(len(values)):
-        part = values[max(0, i - half):i + half + 1]
-        out.append(sum(part) / len(part))
+    lo = hi = 0
+    for t in times:
+        while hi < len(times) and times[hi] <= t + half:
+            hi += 1
+        while times[lo] < t - half:
+            lo += 1
+        out.append(sum(values[lo:hi]) / (hi - lo))
     return out
 
 

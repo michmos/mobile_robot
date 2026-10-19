@@ -94,8 +94,8 @@ FIT_MARGIN = 1.0
 STALL_MARGIN = 0.025
 # points at this |duty| or more aren't fitted, the duty is clamped there
 SATURATION = 0.9
-# samples of the centered moving average of the step responses
-SMOOTH_WINDOW = 5
+# s of the centered moving average of the step responses, ~5 esp32 reports
+SMOOTH_WINDOW = 0.1
 # settling band, fraction of the step
 SETTLE_BAND = 0.05
 # rad/s, lower limit of the settling band and noise floor of the
@@ -573,7 +573,7 @@ class TuningRun:
             for wheel in WHEELS:
                 times = [t for t, _, _ in samples[wheel]]
                 raw = [v for _, _, v in samples[wheel]]
-                smoothed = smooth(raw, SMOOTH_WINDOW) if raw else []
+                smoothed = smooth(times, raw, SMOOTH_WINDOW) if raw else []
                 for t, v, sm in zip(times, raw, smoothed):
                     self.pid_rows.append({
                         'mode': 'pid', 'kp': kp, 'ki': ki, 'wheel': wheel,
@@ -611,8 +611,8 @@ class TuningRun:
                 raw = [v for _, _, v in samples[wheel]]
                 if not raw:
                     continue
-                reason = check_step(times, smooth(raw, SMOOTH_WINDOW), initial,
-                                    target, args.step_duration,
+                reason = check_step(times, smooth(times, raw, SMOOTH_WINDOW),
+                                    initial, target, args.step_duration,
                                     NOISE_FLOOR)
                 if reason is not None:
                     return f'{wheel} {reason}'

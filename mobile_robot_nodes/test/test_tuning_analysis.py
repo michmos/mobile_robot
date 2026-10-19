@@ -184,22 +184,37 @@ def test_fit_without_enough_points_is_none(points):
 
 # smooth
 
-def test_smooth_window_one_is_identity():
-    assert smooth([1.0, 5.0, 2.0], 1) == [1.0, 5.0, 2.0]
+def test_smooth_short_window_is_identity():
+    assert smooth([0.0, 0.1, 0.2], [1.0, 5.0, 2.0], 0.05) == [1.0, 5.0, 2.0]
 
 
 def test_smooth_is_centered_and_shrinks_at_edges():
-    assert smooth([0.0, 3.0, 6.0, 9.0], 3) == pytest.approx(
-        [1.5, 3.0, 6.0, 7.5])
+    assert smooth([0.0, 0.1, 0.2, 0.3], [0.0, 3.0, 6.0, 9.0], 0.25) == \
+        pytest.approx([1.5, 3.0, 6.0, 7.5])
+
+
+def test_smooth_window_is_time_not_samples():
+    # 200 Hz samples repeating 50 Hz reports that alternate by one tick: a
+    # 0.1 s window spans 5 reports whatever the sample rate
+    times = [i * 0.005 for i in range(200)]
+    values = [5.0 + (0.65 if (i // 4) % 2 else 0.0) for i in range(200)]
+    middle = smooth(times, values, 0.1)[20:-20]
+    assert max(middle) - min(middle) < 0.65 / 4
 
 
 def test_smooth_empty():
-    assert smooth([], 5) == []
+    assert smooth([], [], 0.1) == []
 
 
-def test_smooth_rejects_zero_window():
+@pytest.mark.parametrize('window', [0.0, -0.1])
+def test_smooth_rejects_non_positive_window(window):
     with pytest.raises(ValueError):
-        smooth([1.0], 0)
+        smooth([0.0], [1.0], window)
+
+
+def test_smooth_rejects_unequal_sizes():
+    with pytest.raises(ValueError):
+        smooth([0.0, 0.1], [1.0], 0.1)
 
 
 # step_metrics
@@ -291,6 +306,60 @@ def test_mean_velocity_max_rate_keeps_real_motion():
 
 def test_mean_velocity_max_rate_all_jumps_is_none():
     assert mean_velocity([(0.0, 0.0), (0.01, 100.0)], max_rate=40.0) is None
+
+
+def joint_states(omega, duration=3.0, rate=200.0, report_rate=50.0,
+                 jitter=0.0005, glitch=None):
+    """
+    /joint_states as the tuning script records it.
+
+    Samples at rate with small timestamp jitter, the position only updates
+    with each esp32 report (report_rate), a sample picks up the newest one.
+
+    :param glitch: (time s, rad) the reported position jumps by from then on
+    """
+    report = 1.0 / report_rate
+    phase = 0.0073  # reports aren't aligned with the samples
+    samples = []
+    for i in range(int(duration * rate)):
+        jitter_i = jitter * math.sin(i * 1.7)
+        t = 10.0 + i / rate + jitter_i
+        t_report = math.floor((t - phase) / report) * report + phase
+        position = omega * t_report
+        if glitch is not None and t_report >= glitch[0]:
+            position += glitch[1]
+        samples.append((t, position))
+    return samples
+
+
+@pytest.mark.parametrize('omega', [2.0, 10.0, 15.0, 17.0, -15.0])
+def test_mean_velocity_at_200_hz_with_50_hz_reports(omega):
+    # the steps of the held position look ~4x faster than the wheel, they
+    # must not be taken for jumps
+    assert mean_velocity(joint_states(omega), max_rate=40.0) == \
+        pytest.approx(omega, rel=0.02)
+
+
+def test_mean_velocity_skips_a_glitch_between_reports():
+    samples = joint_states(15.0, glitch=(11.5, 100.0))
+    assert mean_velocity(samples, max_rate=40.0) == pytest.approx(
+        15.0, rel=0.02)
+
+
+def test_mean_velocity_standing_wheel_is_zero():
+    assert mean_velocity(joint_states(0.0), max_rate=40.0) == 0.0
+
+
+def test_mean_velocity_skips_missing_positions():
+    samples = joint_states(5.0)
+    samples[100] = (samples[100][0], math.nan)
+    assert mean_velocity(samples, max_rate=40.0) == pytest.approx(
+        5.0, rel=0.02)
+
+
+def test_mean_velocity_single_change_uses_the_window():
+    samples = [(0.0, 1.0), (1.0, 1.0), (1.5, 1.5), (2.0, 1.5)]
+    assert mean_velocity(samples, max_rate=40.0) == pytest.approx(0.25)
 
 
 # select_fit_points / flag_outliers
