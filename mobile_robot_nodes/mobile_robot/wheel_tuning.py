@@ -325,6 +325,7 @@ class TuningRun:
         self._log(f'parameter node {self._param_node}, wheel radius '
                   f'{self._radius} m, fitting {args.fit_min} .. '
                   f'{self._fit_max} rad/s')
+        self._log(f'label: {args.label!r}')
         self._log('commands go to ' + args.topic + ', a higher priority '
                   'twist_mux input (joystick, /cmd_vel_joy) overrides them, '
                   'keep it idle')
@@ -708,9 +709,7 @@ class TuningRun:
         with open(path, 'w', newline='') as file:
             file.write(f'# wheel_tuning {datetime.datetime.now().isoformat()}'
                        '\n')
-            file.write('# battery_voltage='
-                       f'{_fmt(self._args.battery_voltage)}\n')
-            file.write(f'# note={self._args.note}\n')
+            file.write(f'# label={self._args.label}\n')
             file.write(f'# wheel_radius={self._radius}\n')
             if self._original is not None:
                 file.write('# params_at_start=' + ' '.join(
@@ -756,10 +755,10 @@ EXAMPLES = """
 examples (robot launch running, joystick idle):
   bench, feedforward from scratch, then verify and correct it:
     ros2 run mobile_robot wheel_tuning --baseline --direction both \\
-        --iterate 4 --battery-voltage 8.1 --note bench
+        --iterate 4 --label "bench 8.1V"
   floor, refine the current feedforward for the speeds driven most:
     ros2 run mobile_robot wheel_tuning --iterate 3 --direction both \\
-        --fit-max 8 --verify-speeds 2 4 6 8 --note floor
+        --fit-max 8 --verify-speeds 2 4 6 8 --label floor
   PI, one run with given gains:
     ros2 run mobile_robot wheel_tuning --mode pid --kp 0.5 --ki 2.0
   PI grid, coarse first, then finer around the best it suggests:
@@ -785,10 +784,10 @@ def parse_args(argv):
     parser.add_argument('--apply', action='store_true',
                         help='keep the result (fitted feedforward, given or '
                         'best kp/ki) instead of restoring the parameters')
-    parser.add_argument('--battery-voltage', type=float,
-                        help='V, written to the CSV, the slope scales with it')
-    parser.add_argument('--note', default='',
-                        help='free text for the CSV, e.g. bench / floor')
+    parser.add_argument('--label', default='',
+                        help='free text for the CSV and the log, e.g. "bench '
+                        '8.1V" or "floor". Including the battery voltage is '
+                        'recommended, the feedforward slope depends on it')
     parser.add_argument('--csv', help='raw data file, default '
                         'wheel_tuning_<time>.csv in the current directory')
 
@@ -893,9 +892,6 @@ def main(argv=None):
     run = TuningRun(node, args)
     code = 0
     try:
-        if args.battery_voltage is None:
-            node.get_logger().warning('no --battery-voltage given, note it: '
-                                      'the slope changes with the voltage')
         run.setup()
         if args.mode in ('ff', 'all'):
             run.run_ff()
