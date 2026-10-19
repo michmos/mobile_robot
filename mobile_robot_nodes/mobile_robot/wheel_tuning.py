@@ -14,13 +14,16 @@ Modes (--mode):
        measures the speed error and refits until it is within --tolerance.
   pid  runs step responses with the feedforward in effect and the given
        kp / ki / integral_limit, and reports rise time, overshoot, settling
-       time and steady state error per wheel.
+       time and steady state error per wheel. Lists of --kp / --ki are a
+       grid search: every combination is run and scored (IAE / step size +
+       weighted overshoot), oscillating or stuck ones are aborted, and the
+       ranking suggests the best. Start coarse, then refine around it.
   all  ff, then pid with the fitted feedforward.
 
 Every parameter change starts a handshake with the esp32 that brakes the
 wheels (see OVERVIEW.md, "Live tuning"), the script waits for it before
 commanding. All parameters are restored on exit; --apply keeps the fitted
-feedforward and the kp / ki / integral_limit given on the command line.
+feedforward and the given (or the best of a grid) kp / ki / integral_limit.
 """
 
 import argparse
@@ -32,17 +35,22 @@ import time
 
 from geometry_msgs.msg import TwistStamped
 from mobile_robot.tuning_analysis import (
+    check_step,
+    combined_score,
     deadband_bracket,
     feedforward_duty,
     FfPoint,
     fit_feedforward,
+    GridResult,
     is_stalled,
     iterate_feedforward,
     joint_velocity_limit,
     mean_velocity,
+    rank_grid,
     select_fit_points,
     smooth,
     step_metrics,
+    step_score,
     wheel_to_linear,
 )
 from rcl_interfaces.msg import ParameterType
@@ -145,12 +153,32 @@ class WheelTuning(Node):
         :returns dict: {wheel: [(t, position, velocity)]}, t in s since the
             start of the recording
         """
+        return self.record_checked(duration, None)[0]
+
+    def record_checked(self, duration, check, check_every=0.25):
+        """
+        Like record(), but stop early when check says so.
+
+        :param check: callable({wheel: [(t, position, velocity)]}) -> reason
+            or None, called every check_every s with the samples so far
+        :returns tuple: (samples as record(), reason or None)
+        """
         start = self.get_clock().now().nanoseconds * 1e-9
         self._recording = {wheel: [] for wheel in WHEELS}
+
+        def samples():
+            return {wheel: [(t - start, p, v) for t, p, v in recorded]
+                    for wheel, recorded in self._recording.items()}
         try:
-            self.spin_for(duration)
-            return {wheel: [(t - start, p, v) for t, p, v in samples]
-                    for wheel, samples in self._recording.items()}
+            deadline = time.monotonic() + duration
+            while time.monotonic() < deadline:
+                self.spin_for(min(check_every,
+                                  deadline - time.monotonic()))
+                if check is not None:
+                    reason = check(samples())
+                    if reason is not None:
+                        return samples(), reason
+            return samples(), None
         finally:
             self._recording = None
 
@@ -254,6 +282,9 @@ class TuningRun:
         self.ff_rows = []
         self.pid_rows = []
         self.pid_metrics = []
+        # [GridResult] per kp / ki combination, best_pid the best of >= 2
+        self.grid = []
+        self.best_pid = None
 
     def setup(self):
         args = self._args
@@ -482,16 +513,30 @@ class TuningRun:
 
     def run_pid(self, use_fit):
         args = self._args
-        target = {}
-        for name, value in (('pid_kp', args.kp), ('pid_ki', args.ki),
-                            ('pid_integral_limit', args.integral_limit)):
-            # after ff mode kp/ki are 0, back to the original unless given
-            target[name] = value if value is not None else self._original[name]
+        base = {'pid_integral_limit': (args.integral_limit
+                                       if args.integral_limit is not None
+                                       else self._original[
+                                           'pid_integral_limit'])}
         if use_fit:
             for values in self.fits.values():
-                target.update(values)
-        self._apply(target)
+                base.update(values)
+        # after ff mode kp/ki are 0, back to the original unless given
+        kps = args.kp or [self._original['pid_kp']]
+        kis = args.ki or [self._original['pid_ki']]
+        combos = [(kp, ki) for kp in kps for ki in kis]
+        for number, (kp, ki) in enumerate(combos, 1):
+            if len(combos) > 1:
+                self._log(f'---- combination {number}/{len(combos)}: kp {kp} '
+                          f'ki {ki} ----')
+            self.grid.append(self._run_steps(dict(base, pid_kp=kp,
+                                                  pid_ki=ki)))
+        self._report_pid()
 
+    def _run_steps(self, gains):
+        """Run the step sequence with gains, return its GridResult."""
+        args = self._args
+        self._apply(gains)
+        kp, ki = self._current['pid_kp'], self._current['pid_ki']
         self._log('PI: kp {pid_kp} ki {pid_ki} integral_limit '
                   '{pid_integral_limit}, ff left {ff_min_duty_left} + '
                   '{ff_slope_left}/rad/s, right {ff_min_duty_right} + '
@@ -499,41 +544,104 @@ class TuningRun:
 
         self._node.spin_for(1.0)
         previous = 0.0
+        scores = {wheel: [] for wheel in WHEELS}
+        reason = None
         for segment, omega in enumerate(args.steps):
             self._node.command(wheel_to_linear(omega, self._radius))
-            samples = self._node.record(args.step_duration)
+            judged = omega != previous and omega != 0.0
+            check = (self._step_check(previous, omega) if judged else None)
+            samples, abort = self._node.record_checked(args.step_duration,
+                                                       check)
             for wheel in WHEELS:
                 times = [t for t, _, _ in samples[wheel]]
                 raw = [v for _, _, v in samples[wheel]]
                 smoothed = smooth(raw, args.smooth) if raw else []
-                for t, v, s in zip(times, raw, smoothed):
+                for t, v, sm in zip(times, raw, smoothed):
                     self.pid_rows.append({
-                        'mode': 'pid', 'wheel': wheel, 'segment': segment,
-                        'omega_cmd': omega, 't': t, 'velocity': v,
-                        'velocity_smoothed': s})
+                        'mode': 'pid', 'kp': kp, 'ki': ki, 'wheel': wheel,
+                        'segment': segment, 'omega_cmd': omega, 't': t,
+                        'velocity': v, 'velocity_smoothed': sm})
                 # a step to 0 brakes on the esp32, nothing to judge
-                if omega == previous or omega == 0.0 or not smoothed:
+                if not judged or not smoothed or abort:
                     continue
                 metrics = step_metrics(
                     times, smoothed, previous, omega,
                     band_fraction=args.settle_band,
                     band_min=args.settle_band_min)
-                self.pid_metrics.append((segment, wheel, previous, omega,
-                                         metrics))
+                self.pid_metrics.append((kp, ki, segment, wheel, previous,
+                                         omega, metrics))
+                scores[wheel].append(step_score(
+                    times, smoothed, previous, omega,
+                    overshoot_weight=args.overshoot_weight))
+            if abort:
+                reason = abort
+                self._log(f'kp {kp} ki {ki}: {abort}, stopping the wheels '
+                          'and moving on')
+                break
             previous = omega
         self._stop()
-        self._report_pid()
+        return GridResult(kp, ki, {wheel: sum(v) / len(v)
+                                   for wheel, v in scores.items() if v},
+                          reason)
+
+    def _step_check(self, initial, target):
+        args = self._args
+
+        def check(samples):
+            for wheel in WHEELS:
+                times = [t for t, _, _ in samples[wheel]]
+                raw = [v for _, _, v in samples[wheel]]
+                if not raw:
+                    continue
+                reason = check_step(times, smooth(raw, args.smooth), initial,
+                                    target, args.step_duration,
+                                    args.settle_band_min)
+                if reason is not None:
+                    return f'{wheel} {reason}'
+            return None
+        return check
 
     def _report_pid(self):
         print('\n==== PI step responses ====')
-        print('seg wheel  step (rad/s)    rise (s)  overshoot  settle (s)  '
-              'ss error (rad/s)')
-        for segment, wheel, start, target, m in self.pid_metrics:
-            print(f'{segment:3} {wheel:5}  {start:5.2f} -> {target:5.2f}  '
+        print('   kp     ki  seg wheel  step (rad/s)    rise (s)  overshoot  '
+              'settle (s)  ss error (rad/s)')
+        for kp, ki, segment, wheel, start, target, m in self.pid_metrics:
+            print(f'{kp:5.2f} {ki:6.2f}  {segment:3} {wheel:5}  '
+                  f'{start:5.2f} -> {target:5.2f}  '
                   f'{_fmt(m.rise_time, 3):>8}  '
                   f'{m.overshoot_percent:7.1f} %  '
                   f'{_fmt(m.settling_time, 3):>10}  '
                   f'{m.steady_state_error:8.3f}')
+        for result in self.grid:
+            if result.reason is not None:
+                print(f'kp {result.kp} ki {result.ki}: aborted, '
+                      f'{result.reason}')
+        if len(self.grid) < 2:
+            return
+        print('\n==== PI grid, best first (score: IAE / step size + '
+              f'{self._args.overshoot_weight} x overshoot, lower is better) '
+              '====')
+        for wheel in (None,) + WHEELS:
+            print(f'{wheel or "combined"}:')
+            for rank, result in enumerate(rank_grid(self.grid, wheel), 1):
+                score = (combined_score(result) if wheel is None
+                         else result.scores.get(wheel))
+                shown = (result.reason if result.reason is not None
+                         else _fmt(score, 3))
+                print(f'  {rank:2}. kp {result.kp:6.3f} ki {result.ki:6.3f}  '
+                      f'{shown}')
+        best = rank_grid(self.grid)[0]
+        if best.reason is not None:
+            print('\nevery combination was aborted, try smaller gains')
+            return
+        self.best_pid = {'pid_kp': best.kp, 'pid_ki': best.ki}
+        print('\nsuggested (best combined, both wheels share the gains):')
+        for name, value in self.best_pid.items():
+            print(f'  ros2 param set {self._param_node} {name} {value}')
+        print('refine with a finer grid around it, e.g. --kp '
+              f'{_fmt(best.kp * 0.7, 2)} {_fmt(best.kp, 2)} '
+              f'{_fmt(best.kp * 1.4, 2)} --ki {_fmt(best.ki * 0.7, 2)} '
+              f'{_fmt(best.ki, 2)} {_fmt(best.ki * 1.4, 2)}')
 
     # ---- shared ----
 
@@ -563,12 +671,14 @@ class TuningRun:
         if self._args.apply:
             for values in self.fits.values():
                 final.update(values)
-            for name, value in (('pid_kp', self._args.kp),
-                                ('pid_ki', self._args.ki),
-                                ('pid_integral_limit',
-                                 self._args.integral_limit)):
-                if value is not None:
-                    final[name] = value
+            if self.best_pid:
+                final.update(self.best_pid)
+            for name, values in (('pid_kp', self._args.kp),
+                                 ('pid_ki', self._args.ki)):
+                if values is not None and len(values) == 1:
+                    final[name] = values[0]
+            if self._args.integral_limit is not None:
+                final['pid_integral_limit'] = self._args.integral_limit
         self._apply(final)
         self._log('parameters now: ' + ', '.join(
             f'{k}={v}' for k, v in self._current.items()))
@@ -577,8 +687,8 @@ class TuningRun:
         rows = self.ff_rows + self.pid_rows
         if not rows:
             return
-        fields = ['mode', 'round', 'wheel', 'direction', 'segment',
-                  'omega_cmd',
+        fields = ['mode', 'round', 'kp', 'ki', 'wheel', 'direction',
+                  'segment', 'omega_cmd',
                   'duty', 'omega_actual', 'stalled', 't', 'velocity',
                   'velocity_smoothed']
         with open(path, 'w', newline='') as file:
@@ -682,8 +792,10 @@ def parse_args(argv):
                     '(default 2 .. 10 within the fit range)')
 
     pid = parser.add_argument_group('PI (--mode pid / all)')
-    pid.add_argument('--kp', type=float)
-    pid.add_argument('--ki', type=float)
+    pid.add_argument('--kp', type=float, nargs='+',
+                     help='one value, or a list for a grid search')
+    pid.add_argument('--ki', type=float, nargs='+',
+                     help='one value, or a list for a grid search')
     pid.add_argument('--integral-limit', type=float)
     pid.add_argument('--steps', type=float, nargs='+', default=[3.0, 6.0, 3.0],
                      help='wheel rad/s targets, from rest, each held '
@@ -694,7 +806,11 @@ def parse_args(argv):
     pid.add_argument('--settle-band', type=float, default=0.05,
                      help='settling band, fraction of the step')
     pid.add_argument('--settle-band-min', type=float, default=0.3,
-                     help='rad/s, lower limit of the settling band')
+                     help='rad/s, lower limit of the settling band, also '
+                     'the noise floor of the oscillation check')
+    pid.add_argument('--overshoot-weight', type=float, default=1.0,
+                     help='weight of the overshoot (fraction of the step) '
+                     'in the grid score')
 
     args = parser.parse_args(argv)
     if args.speeds is None:

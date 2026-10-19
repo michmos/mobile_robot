@@ -32,6 +32,14 @@ max_error, mean_error: relative speed errors |actual - cmd| / |cmd| of the
     round's points, a stalled point counts as 1.
 """
 
+GridResult = namedtuple('GridResult', ['kp', 'ki', 'scores', 'reason'])
+GridResult.__doc__ = """Outcome of one kp / ki combination of the PI grid.
+
+scores: {wheel: score}, see step_score(), lower is better.
+reason: None, or why the combination was aborted (e.g. 'left
+    oscillating'), its scores then don't count.
+"""
+
 StepMetrics = namedtuple('StepMetrics', [
     'rise_time', 'overshoot_percent', 'settling_time', 'steady_state_error'])
 StepMetrics.__doc__ = """Step response metrics, times in s from the step.
@@ -460,3 +468,120 @@ def step_metrics(times, values, initial, target, band_fraction=0.05,
     return StepMetrics(rise_time=rise_time, overshoot_percent=overshoot,
                        settling_time=settling_time,
                        steady_state_error=steady_state_error)
+
+
+def iae(times, values, target):
+    """Integrated absolute error, trapezoidal: integral of |target - v| dt."""
+    total = 0.0
+    for (t0, v0), (t1, v1) in zip(zip(times, values),
+                                  zip(times[1:], values[1:])):
+        total += 0.5 * (abs(target - v0) + abs(target - v1)) * (t1 - t0)
+    return total
+
+
+def step_score(times, values, initial, target, overshoot_weight=1.0):
+    """
+    Single number for a step response, lower is better.
+
+    IAE divided by the step size (so steps of different size weigh the
+    same, unit s: how long the full step error would last) plus
+    overshoot_weight times the overshoot as a fraction of the step.
+    """
+    step = target - initial
+    if step == 0.0:
+        raise ValueError('initial and target must differ')
+    overshoot = step_metrics(times, values, initial,
+                             target).overshoot_percent / 100.0
+    return iae(times, values, target) / abs(step) + overshoot_weight * \
+        overshoot
+
+
+def error_peaks(values, target, noise_floor):
+    """
+    Peak |error| of each half-oscillation around the target.
+
+    The error is split where its sign changes, ignoring excursions inside
+    noise_floor (encoder quantization), the first segment (the rise) is
+    not a half-oscillation and left out.
+
+    :returns list: peak |target - v| per half-oscillation, in order
+    """
+    peaks = []
+    sign = 0
+    peak = 0.0
+    for v in values:
+        error = target - v
+        if abs(error) <= noise_floor:
+            continue
+        s = 1 if error > 0 else -1
+        if s != sign:
+            if sign != 0:
+                peaks.append(peak)
+            sign = s
+            peak = 0.0
+        peak = max(peak, abs(error))
+    if sign != 0:
+        peaks.append(peak)
+    return peaks[1:]
+
+
+def is_oscillating(values, target, noise_floor, min_half_cycles=4,
+                   growth=0.9):
+    """
+    Tell if a step response oscillates without dying out.
+
+    True with at least min_half_cycles swings around the target beyond
+    noise_floor whose peaks shrink by less than growth per swing on
+    average (>= 1: growing). A well damped overshoot has one or two swings
+    that shrink fast.
+    """
+    peaks = error_peaks(values, target, noise_floor)
+    if len(peaks) < min_half_cycles:
+        return False
+    ratios = [b / a for a, b in zip(peaks, peaks[1:]) if a > 0.0]
+    return bool(ratios) and sum(ratios) / len(ratios) >= growth
+
+
+def check_step(times, values, initial, target, duration, noise_floor,
+               progress=0.5):
+    """
+    Decide while a step runs if the combination should be aborted.
+
+    :param duration: s the step is held
+    :param progress: share of the step that must be done after half of
+        duration, else the wheel is stuck or saturated (duty at its limit)
+    :returns str: 'oscillating', 'no progress', or None to go on
+    """
+    if not values:
+        return None
+    if is_oscillating(values, target, noise_floor):
+        return 'oscillating'
+    step = target - initial
+    if step != 0.0 and times[-1] >= duration / 2.0:
+        done = (values[-1] - initial) / step
+        if done < progress:
+            return 'no progress'
+    return None
+
+
+def combined_score(result):
+    """Mean of the wheels' scores, inf for an aborted combination."""
+    if result.reason is not None or not result.scores:
+        return math.inf
+    return sum(result.scores.values()) / len(result.scores)
+
+
+def rank_grid(results, wheel=None):
+    """
+    Order grid results best first.
+
+    :param wheel: rank by this wheel's score, None by combined_score()
+    :returns list: [GridResult], aborted ones last, in their original order
+    """
+    def key(result):
+        if result.reason is not None:
+            return math.inf
+        if wheel is None:
+            return combined_score(result)
+        return result.scores.get(wheel, math.inf)
+    return sorted(results, key=key)

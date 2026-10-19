@@ -3,21 +3,29 @@
 import math
 
 from mobile_robot.tuning_analysis import (
+    check_step,
+    combined_score,
     deadband_bracket,
+    error_peaks,
     feedforward_duty,
     FfPoint,
     fit_feedforward,
     fit_needed_duty,
     flag_outliers,
+    GridResult,
+    iae,
+    is_oscillating,
     is_stalled,
     iterate_feedforward,
     joint_velocity_limit,
     mean_velocity,
     needed_duty,
+    rank_grid,
     relative_errors,
     select_fit_points,
     smooth,
     step_metrics,
+    step_score,
     wheel_to_linear,
 )
 import pytest
@@ -581,3 +589,129 @@ def test_joint_velocity_limit_single_joint():
 ])
 def test_joint_velocity_limit_missing_is_none(urdf, joints):
     assert joint_velocity_limit(urdf, joints) is None
+
+
+# PI grid: iae, step_score, oscillation, check_step, ranking
+
+
+def first_order(tau, initial=0.0, target=5.0, duration=3.0, dt=0.02):
+    times = [i * dt for i in range(int(duration / dt) + 1)]
+    values = [target + (initial - target) * math.exp(-t / tau) for t in times]
+    return times, values
+
+
+def oscillation(amplitude_ratio, target=5.0, duration=6.0, dt=0.02,
+                period=0.4, first=2.0):
+    """Cosine around target from its peak, amplitude * ratio per half period."""
+    times = [i * dt for i in range(int(duration / dt) + 1)]
+    values = [target + first * amplitude_ratio ** (t / (period / 2)) *
+              math.cos(2 * math.pi * t / period) for t in times]
+    return times, values
+
+
+def test_iae_of_a_constant_error():
+    assert iae([0.0, 1.0, 2.0], [3.0, 3.0, 3.0], 5.0) == pytest.approx(4.0)
+
+
+def test_iae_of_a_first_order_step_is_tau_times_step():
+    times, values = first_order(0.2, duration=3.0, dt=0.001)
+    assert iae(times, values, 5.0) == pytest.approx(0.2 * 5.0, rel=1e-3)
+
+
+def test_step_score_normalizes_the_step_size():
+    small = step_score(*first_order(0.2, target=2.0), 0.0, 2.0)
+    large = step_score(*first_order(0.2, target=8.0), 0.0, 8.0)
+    assert small == pytest.approx(large, rel=1e-6)
+    assert small == pytest.approx(0.2, rel=0.02)
+
+
+def test_step_score_faster_is_better():
+    assert step_score(*first_order(0.1), 0.0, 5.0) < step_score(
+        *first_order(0.4), 0.0, 5.0)
+
+
+def test_step_score_penalizes_overshoot():
+    times = [0.0, 0.1, 0.2, 0.3, 1.0]
+    values = [0.0, 6.0, 5.0, 5.0, 5.0]
+    without = step_score(times, values, 0.0, 5.0, overshoot_weight=0.0)
+    weighted = step_score(times, values, 0.0, 5.0, overshoot_weight=2.0)
+    assert weighted - without == pytest.approx(2.0 * 0.2)
+
+
+def test_step_score_rejects_zero_step():
+    with pytest.raises(ValueError):
+        step_score([0.0, 1.0], [1.0, 1.0], 1.0, 1.0)
+
+
+def test_error_peaks_skip_the_rise_and_noise():
+    values = [0.0, 3.0, 5.1, 6.0, 5.0, 4.0, 5.0, 5.2, 5.0]
+    # rise (error > 0) left out, then -1.0 overshoot, +1.0 undershoot, the
+    # 0.2 inside the noise floor ignored
+    assert error_peaks(values, 5.0, noise_floor=0.3) == [1.0, 1.0]
+
+
+def test_growing_oscillation_is_oscillating():
+    _, values = oscillation(1.1)
+    assert is_oscillating(values, 5.0, noise_floor=0.3)
+
+
+def test_sustained_oscillation_is_oscillating():
+    _, values = oscillation(1.0)
+    assert is_oscillating(values, 5.0, noise_floor=0.3)
+
+
+def test_damped_oscillation_is_not_oscillating():
+    _, values = oscillation(0.5)
+    assert not is_oscillating(values, 5.0, noise_floor=0.3)
+
+
+def test_first_order_response_is_not_oscillating():
+    _, values = first_order(0.2)
+    assert not is_oscillating(values, 5.0, noise_floor=0.3)
+
+
+def test_noise_around_the_target_is_not_oscillating():
+    values = [5.0 + (0.25 if i % 2 else -0.25) for i in range(100)]
+    assert not is_oscillating(values, 5.0, noise_floor=0.3)
+
+
+def test_check_step_oscillating():
+    times, values = oscillation(1.1)
+    assert check_step(times, values, 0.0, 5.0, 6.0, 0.3) == 'oscillating'
+
+
+def test_check_step_no_progress_after_half_the_step():
+    times = [i * 0.1 for i in range(16)]
+    values = [1.0] * 16
+    assert check_step(times, values, 0.0, 5.0, 3.0, 0.3) == 'no progress'
+    # too early to tell
+    assert check_step(times[:10], values[:10], 0.0, 5.0, 3.0, 0.3) is None
+
+
+def test_check_step_good_response_goes_on():
+    times, values = first_order(0.2)
+    assert check_step(times, values, 0.0, 5.0, 3.0, 0.3) is None
+    assert check_step([], [], 0.0, 5.0, 3.0, 0.3) is None
+
+
+def test_rank_grid_best_first_aborted_last():
+    results = [
+        GridResult(0.2, 0.0, {'left': 0.5, 'right': 0.7}, None),
+        GridResult(2.0, 4.0, {'left': 0.1}, 'left oscillating'),
+        GridResult(0.5, 1.0, {'left': 0.3, 'right': 0.3}, None),
+        GridResult(1.0, 1.0, {'left': 0.2, 'right': 0.6}, None),
+    ]
+    assert [(r.kp, r.ki) for r in rank_grid(results)] == [
+        (0.5, 1.0), (1.0, 1.0), (0.2, 0.0), (2.0, 4.0)]
+    assert [r.kp for r in rank_grid(results, 'left')] == [1.0, 0.5, 0.2,
+                                                          2.0]
+    assert [r.kp for r in rank_grid(results, 'right')] == [0.5, 1.0, 0.2,
+                                                           2.0]
+
+
+def test_combined_score():
+    assert combined_score(GridResult(1.0, 1.0, {'left': 0.2, 'right': 0.4},
+                                     None)) == pytest.approx(0.3)
+    assert combined_score(GridResult(1.0, 1.0, {'left': 0.2},
+                                     'right no progress')) == math.inf
+    assert combined_score(GridResult(1.0, 1.0, {}, None)) == math.inf
