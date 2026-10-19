@@ -67,6 +67,44 @@ def feedforward_duty(omega_cmd, slope, min_duty):
     return max(-1.0, min(1.0, duty))
 
 
+def sweep_order(speeds, directions):
+    """
+    Order of the feedforward sweep's points, directions alternating.
+
+    Each speed is measured in every direction before the next speed, so on
+    the floor a forward point is followed by its reverse point and the robot
+    ends up about where it started, instead of driving the whole sweep one
+    way and then back.
+
+    :param speeds: rad/s, > 0, in sweep order
+    :param directions: e.g. ['forward', 'reverse'], in the order per speed
+    :returns list: [(direction, omega_cmd)], omega_cmd < 0 for 'reverse'
+    """
+    return [(d, -omega if d == 'reverse' else omega)
+            for omega in speeds for d in directions]
+
+
+def mirrored_steps(steps):
+    """
+    PI step sequence followed by the same sequence mirrored.
+
+    The mirrored half negates every target, so each kp / ki combination
+    drives about as far back as forward. A stop is put between the halves
+    (unless the sequence already ends at 0), so the mirrored half starts
+    from rest like the given one and its steps are the given ones negated.
+    Steps with mixed signs are mirrored the same way.
+
+    :param steps: rad/s targets, from rest
+    :returns list: [(direction, target)], direction 'forward' for the
+        given sequence and 'reverse' for the stop and the mirrored half
+    """
+    mirrored = [-s if s != 0.0 else 0.0 for s in steps]
+    if steps and steps[-1] != 0.0:
+        mirrored.insert(0, 0.0)
+    return ([('forward', s) for s in steps] +
+            [('reverse', s) for s in mirrored])
+
+
 def mean_velocity(samples, max_rate=None):
     """
     Mean velocity from position samples: delta position / delta time.

@@ -20,6 +20,7 @@ from mobile_robot.tuning_analysis import (
     iterate_feedforward,
     joint_velocity_limit,
     mean_velocity,
+    mirrored_steps,
     needed_duty,
     rank_grid,
     relative_errors,
@@ -27,6 +28,7 @@ from mobile_robot.tuning_analysis import (
     smooth,
     step_metrics,
     step_score,
+    sweep_order,
     values_to_keep,
     wheel_to_linear,
 )
@@ -842,3 +844,61 @@ def test_values_to_keep_no_pid_drops_integral_limit():
 
 def test_values_to_keep_nothing_fitted():
     assert values_to_keep(True, {}, None) == {}
+
+
+# sweep_order / mirrored_steps (order of the floor runs)
+
+
+def test_sweep_order_alternates_directions_per_speed():
+    assert sweep_order([2.0, 4.0, 6.0], ['forward', 'reverse']) == [
+        ('forward', 2.0), ('reverse', -2.0),
+        ('forward', 4.0), ('reverse', -4.0),
+        ('forward', 6.0), ('reverse', -6.0)]
+
+
+@pytest.mark.parametrize('direction, sign', [('forward', 1.0),
+                                             ('reverse', -1.0)])
+def test_sweep_order_one_direction_keeps_the_speed_order(direction, sign):
+    assert sweep_order([3.0, 2.5, 2.0], [direction]) == [
+        (direction, sign * 3.0), (direction, sign * 2.5),
+        (direction, sign * 2.0)]
+
+
+def test_sweep_order_nets_out_on_the_floor():
+    # after every speed the robot is back where it started
+    order = sweep_order([1.5, 3.0, 5.0], ['forward', 'reverse'])
+    for i in range(0, len(order), 2):
+        assert order[i][1] + order[i + 1][1] == 0.0
+
+
+def test_mirrored_steps_default_sequence():
+    assert mirrored_steps([3.0, 6.0, 3.0]) == [
+        ('forward', 3.0), ('forward', 6.0), ('forward', 3.0),
+        ('reverse', 0.0),
+        ('reverse', -3.0), ('reverse', -6.0), ('reverse', -3.0)]
+
+
+def test_mirrored_steps_nets_out_on_the_floor():
+    targets = [t for _, t in mirrored_steps([2.0, 5.0, 8.0, 4.0])]
+    assert sum(targets) == 0.0
+
+
+def test_mirrored_steps_ending_at_rest_gets_no_extra_stop():
+    assert mirrored_steps([3.0, 0.0]) == [
+        ('forward', 3.0), ('forward', 0.0),
+        ('reverse', -3.0), ('reverse', 0.0)]
+
+
+def test_mirrored_steps_mixed_signs_are_mirrored_too():
+    assert mirrored_steps([3.0, -3.0]) == [
+        ('forward', 3.0), ('forward', -3.0),
+        ('reverse', 0.0), ('reverse', -3.0), ('reverse', 3.0)]
+
+
+def test_mirrored_steps_reverse_half_is_the_given_one_negated():
+    steps = [3.0, 6.0, 3.0]
+    reverse = [t for d, t in mirrored_steps(steps) if d == 'reverse']
+    # judged steps: from the same start, the same size, the other way
+    given = list(zip([0.0] + steps, steps))
+    mirrored = list(zip(reverse, reverse[1:]))
+    assert mirrored == [(-a, -b) for a, b in given]
