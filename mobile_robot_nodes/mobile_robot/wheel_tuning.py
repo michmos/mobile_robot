@@ -400,11 +400,12 @@ class TuningRun:
                     'direction': direction, 'omega_cmd': omega_cmd,
                     'duty': point.duty, 'omega_actual': actual,
                     'stalled': point.stalled})
-                shown = 'n/a' if actual is None else f'{actual:6.2f}'
-                line.append(f'{wheel} duty {point.duty:5.3f} -> {shown} '
-                            'rad/s' +
-                            (' (stalled)' if point.stalled else ''))
-            self._log(' | '.join(line))
+                # fixed signed widths, so forward and reverse rows line up
+                shown = 'n/a' if actual is None else f'{actual:.2f}'
+                stalled = ' (stalled)' if point.stalled else ''
+                line.append(f'{wheel} duty {point.duty:6.3f} -> {shown:>6} '
+                            f'rad/s{stalled:10}')
+            self._log(' | '.join(line).rstrip())
         self._stop()
         return points
 
@@ -639,11 +640,11 @@ class TuningRun:
 
     def _report_pid(self):
         print('\n==== PI step responses ====')
-        print('   kp     ki  seg wheel  step (rad/s)    rise (s)  overshoot  '
-              'settle (s)  ss error (rad/s)')
+        print('   kp     ki  seg wheel  step (rad/s)      rise (s)  '
+              'overshoot  settle (s)  ss error (rad/s)')
         for kp, ki, segment, wheel, start, target, m in self.pid_metrics:
             print(f'{kp:5.2f} {ki:6.2f}  {segment:3} {wheel:5}  '
-                  f'{start:5.2f} -> {target:5.2f}  '
+                  f'{start:6.2f} -> {target:6.2f}  '
                   f'{_fmt(m.rise_time, 3):>8}  '
                   f'{m.overshoot_percent:7.1f} %  '
                   f'{_fmt(m.settling_time, 3):>10}  '
