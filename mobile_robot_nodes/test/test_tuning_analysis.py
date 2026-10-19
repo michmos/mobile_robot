@@ -7,8 +7,15 @@ from mobile_robot.tuning_analysis import (
     feedforward_duty,
     FfPoint,
     fit_feedforward,
+    fit_needed_duty,
+    flag_outliers,
     is_stalled,
+    iterate_feedforward,
+    joint_velocity_limit,
     mean_velocity,
+    needed_duty,
+    relative_errors,
+    select_fit_points,
     smooth,
     step_metrics,
     wheel_to_linear,
@@ -255,3 +262,322 @@ def test_step_metrics_rejects_zero_step():
 def test_step_metrics_rejects_bad_input(times, values):
     with pytest.raises(ValueError):
         step_metrics(times, values, 0.0, 1.0)
+
+
+# mean_velocity with max_rate
+
+
+def test_mean_velocity_skips_position_jumps():
+    # 2 rad/s, with a jump of the reported position by 100 rad in between
+    samples = [(0.0, 0.0), (1.0, 2.0), (1.02, 102.04), (2.02, 104.04)]
+    assert mean_velocity(samples, max_rate=40.0) == pytest.approx(
+        2.0, abs=1e-6)
+
+
+def test_mean_velocity_max_rate_keeps_real_motion():
+    samples = [(0.0, 0.0), (0.5, 5.0), (1.0, 10.0)]
+    assert mean_velocity(samples, max_rate=40.0) == pytest.approx(10.0)
+
+
+def test_mean_velocity_max_rate_all_jumps_is_none():
+    assert mean_velocity([(0.0, 0.0), (0.01, 100.0)], max_rate=40.0) is None
+
+
+# select_fit_points / flag_outliers
+
+# bench run 1, left wheel forward (--baseline, duty = cmd / 10)
+BENCH_DUTIES = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+BENCH_LEFT = [0.0, 2.09, 6.25, 9.57, 11.73, 13.20, 14.16, 14.98, 15.60,
+              16.97]
+
+
+def bench_points(omegas, sign=1.0):
+    return [FfPoint(sign * d, sign * w, w < 0.2)
+            for d, w in zip(BENCH_DUTIES, omegas)]
+
+
+def test_select_keeps_only_the_drivable_range():
+    used, excluded = select_fit_points(bench_points(BENCH_LEFT), fit_min=1.0,
+                                       fit_max=11.0)
+    assert sorted(p.duty for p in used) == [0.2, 0.3, 0.4]
+    reasons = {round(p.duty, 3): r for p, r in excluded}
+    assert reasons[0.1] == 'stalled'
+    assert reasons[0.5] == 'above fit range'
+    assert reasons[0.9] == 'saturated'
+
+
+def test_range_fit_matches_the_bench_curve_where_it_is_driven():
+    used, _ = select_fit_points(bench_points(BENCH_LEFT), fit_min=1.0,
+                                fit_max=11.0)
+    fit = fit_feedforward(used)
+    assert fit.min_duty == pytest.approx(0.141, abs=0.005)
+    assert fit.slope == pytest.approx(0.0266, abs=0.001)
+
+
+def test_select_near_stall_and_below_fit_min():
+    points = [FfPoint(0.15, 0.0, True), FfPoint(0.16, 3.0, False),
+              FfPoint(0.2, 0.5, False), FfPoint(0.3, 6.0, False),
+              FfPoint(0.4, 9.0, False)]
+    _, excluded = select_fit_points(points, fit_min=1.0, fit_max=11.0,
+                                    stall_margin=0.025)
+    reasons = {p.duty: r for p, r in excluded}
+    assert reasons[0.16] == 'near stall'
+    assert reasons[0.2] == 'below fit range'
+
+
+def test_select_judges_directions_separately():
+    # reverse stalls up to 0.2, forward only at 0.1
+    points = [FfPoint(0.1, 0.0, True), FfPoint(0.2, 3.0, False),
+              FfPoint(0.3, 6.0, False), FfPoint(-0.2, 0.0, True),
+              FfPoint(-0.21, -0.4, False), FfPoint(-0.3, -6.0, False)]
+    used, excluded = select_fit_points(points, fit_min=1.0, fit_max=11.0)
+    assert sorted(p.duty for p in used) == [-0.3, 0.2, 0.3]
+    assert (FfPoint(-0.21, -0.4, False), 'near stall') in excluded
+
+
+def test_outlier_in_the_middle_is_flagged_not_its_neighbours():
+    duties = [0.2, 0.225, 0.25, 0.275, 0.3]
+    omegas = [2.0, 3.0, 0.9, 5.0, 6.0]
+    points = [FfPoint(d, w, False) for d, w in zip(duties, omegas)]
+    assert flag_outliers(points, 0.4) == {2}
+
+
+def test_outlier_at_the_deadband_end_is_flagged():
+    # bench run 2: the left wheel barely turned at duty 0.2
+    points = [FfPoint(0.2, 0.61, False), FfPoint(0.3, 6.47, False),
+              FfPoint(0.4, 9.85, False)]
+    assert flag_outliers(points, 0.4) == {0}
+
+
+def test_concave_bench_curve_has_no_outliers():
+    points = [FfPoint(d, w, False)
+              for d, w in zip(BENCH_DUTIES[1:4], BENCH_LEFT[1:4])]
+    assert flag_outliers(points, 0.4) == set()
+
+
+def test_outliers_need_three_points():
+    points = [FfPoint(0.2, 0.1, False), FfPoint(0.3, 6.0, False)]
+    assert flag_outliers(points, 0.4) == set()
+
+
+def test_select_excludes_outliers_from_the_fit():
+    points = [FfPoint(0.2, 2.0, False), FfPoint(0.25, 4.0, False),
+              FfPoint(0.3, 1.2, False), FfPoint(0.35, 8.0, False),
+              FfPoint(0.4, 10.0, False)]
+    used, excluded = select_fit_points(points, fit_min=1.0, fit_max=11.0)
+    assert (FfPoint(0.3, 1.2, False), 'outlier') in excluded
+    assert len(used) == 4
+
+
+# needed_duty / fit_needed_duty
+
+
+def test_needed_duty_interpolates_between_the_nearest_speeds():
+    points = [FfPoint(0.2, 2.0, False), FfPoint(0.3, 6.0, False),
+              FfPoint(-0.4, -10.0, False)]
+    assert needed_duty(points, 4.0) == pytest.approx(0.25)
+    assert needed_duty(points, -8.0) == pytest.approx(0.35)
+    assert needed_duty(points, 6.0) == pytest.approx(0.3)
+
+
+def test_needed_duty_outside_the_measured_speeds_is_none():
+    points = [FfPoint(0.2, 2.0, False), FfPoint(0.3, 6.0, False)]
+    assert needed_duty(points, 1.0) is None
+    assert needed_duty(points, 7.0) is None
+
+
+def test_fit_needed_duty_is_exact_on_a_linear_motor():
+    points = motor_points(0.14, 0.026, [1.5, 3.3, 5.1, 7.7, 10.4])
+    fit = fit_needed_duty(points, [2.0, 4.0, 6.0, 8.0, 10.0])
+    assert fit.min_duty == pytest.approx(0.14, abs=1e-9)
+    assert fit.slope == pytest.approx(0.026, abs=1e-9)
+
+
+def test_fit_needed_duty_weights_low_speeds_more():
+    # duty over speed bends up (motor curve flattens): the weighted line
+    # stays closer to the low speed end than an unweighted one
+    omegas = [2.0, 4.0, 6.0, 8.0, 10.0]
+    points = [FfPoint(0.14 + 0.02 * w + 0.001 * w * w, w, False)
+              for w in [1.0] + omegas + [11.0]]
+    weighted = fit_needed_duty(points, omegas)
+    plain = fit_feedforward([p for p in points
+                             if 2.0 <= p.omega_actual <= 10.0])
+    need_at_2 = 0.14 + 0.04 + 0.004
+    assert abs(weighted.min_duty + weighted.slope * 2.0 - need_at_2) < abs(
+        plain.min_duty + plain.slope * 2.0 - need_at_2)
+
+
+# relative_errors
+
+
+def test_relative_errors():
+    points = [FfPoint(0.3, 4.4, False), FfPoint(-0.3, -3.0, False),
+              FfPoint(0.1, 0.0, True)]
+    assert relative_errors([4.0, -4.0, 1.0], points) == pytest.approx(
+        [0.1, 0.25, 1.0])
+
+
+# iterate_feedforward, with a fake plant that maps duty -> wheel speed
+
+
+def plant_measure(curves):
+    """measure() of iterate_feedforward over {wheel: duty -> omega}."""
+    def measure(params, omega_cmds):
+        out = {}
+        for wheel, (min_duty, slope) in params.items():
+            out[wheel] = []
+            for cmd in omega_cmds:
+                duty = feedforward_duty(cmd, slope, min_duty)
+                omega = math.copysign(curves[wheel](abs(duty)), duty)
+                out[wheel].append(FfPoint(duty, omega, abs(omega) < 0.2))
+        return out
+    return measure
+
+
+def linear_motor(min_duty, slope):
+    return lambda d: max(0.0, (d - min_duty) / slope)
+
+
+def concave_motor(d):
+    # like the bench: steep above the deadband, flattening out
+    return 0.0 if d < 0.15 else 18.0 * (1.0 - math.exp(-(d - 0.15) / 0.25))
+
+
+def select_range(points):
+    return select_fit_points(points, fit_min=1.0, fit_max=11.0)[0]
+
+
+CMDS = [2.0, 4.0, 6.0, 8.0, 10.0]
+
+
+def test_iterate_converges_on_a_linear_motor():
+    measure = plant_measure({'left': linear_motor(0.14, 0.026)})
+    final, rounds, status = iterate_feedforward(
+        measure, {'left': (0.05, 0.04)}, CMDS, tolerance=0.05,
+        max_rounds=5, select=select_range)
+    assert status == {'left': 'converged'}
+    assert final['left'] == pytest.approx((0.14, 0.026), abs=1e-3)
+    # round 1 measures the start values, round 2 the refit
+    assert [r.round for r in rounds] == [1, 2]
+    assert rounds[-1].max_error <= 0.05
+
+
+def test_iterate_already_good_start_needs_one_round():
+    measure = plant_measure({'left': linear_motor(0.14, 0.026)})
+    final, rounds, status = iterate_feedforward(
+        measure, {'left': (0.14, 0.026)}, CMDS, tolerance=0.05,
+        max_rounds=5, select=select_range)
+    assert status == {'left': 'converged'}
+    assert len(rounds) == 1
+
+
+def concave_baseline():
+    """--baseline sweep of the concave motor and its range fit."""
+    measure = plant_measure({'left': concave_motor})
+    seed = measure({'left': (0.0, 0.1)},
+                   [1.5 + 0.25 * i for i in range(15)])['left']
+    fit = fit_feedforward(select_range(seed))
+    return measure, seed, (fit.min_duty, fit.slope)
+
+
+def test_iterate_on_a_concave_motor_gets_stuck_and_keeps_the_best():
+    measure, seed, start = concave_baseline()
+    final, rounds, status = iterate_feedforward(
+        measure, {'left': start}, CMDS, tolerance=0.01, max_rounds=10,
+        select=select_range, seed={'left': seed})
+    assert status['left'] in ('stuck', 'max rounds')
+    best_round = min(rounds, key=lambda r: r.max_error)
+    assert best_round.max_error > 0.01
+    # the result is the verified round with the smallest error
+    assert final['left'] == (best_round.min_duty, best_round.slope)
+    assert best_round.max_error < rounds[0].max_error
+
+
+def test_iterate_concave_motor_converges_with_a_looser_tolerance():
+    measure, seed, start = concave_baseline()
+    _, rounds, status = iterate_feedforward(
+        measure, {'left': start}, CMDS, tolerance=0.1, max_rounds=10,
+        select=select_range, seed={'left': seed})
+    assert status == {'left': 'converged'}
+    assert rounds[0].max_error > 0.1
+
+
+def test_iterate_uses_the_seed_points():
+    # a seed sweep around the commanded speeds makes round 2 exact
+    seed = motor_points(0.14, 0.026, [1.5, 3.0, 5.0, 7.0, 9.0, 10.5])
+    measure = plant_measure({'left': linear_motor(0.14, 0.026)})
+    final, rounds, status = iterate_feedforward(
+        measure, {'left': (0.05, 0.04)}, CMDS, tolerance=0.001,
+        max_rounds=2, select=select_range, seed={'left': seed})
+    assert status == {'left': 'converged'}
+    assert final['left'] == pytest.approx((0.14, 0.026), abs=1e-9)
+
+
+def test_iterate_wheels_are_independent():
+    measure = plant_measure({'left': linear_motor(0.14, 0.026),
+                             'right': linear_motor(0.13, 0.0255)})
+    final, rounds, status = iterate_feedforward(
+        measure, {'left': (0.14, 0.026), 'right': (0.0, 0.05)}, CMDS,
+        tolerance=0.05, max_rounds=5, select=select_range)
+    assert status == {'left': 'converged', 'right': 'converged'}
+    assert [r.wheel for r in rounds if r.round == 2] == ['right']
+    assert final['right'] == pytest.approx((0.13, 0.0255), abs=1e-3)
+
+
+def test_iterate_without_moving_points_gives_up():
+    measure = plant_measure({'left': lambda d: 0.0})
+    final, rounds, status = iterate_feedforward(
+        measure, {'left': (0.0, 0.01)}, CMDS, tolerance=0.05,
+        max_rounds=5, select=select_range)
+    assert status == {'left': 'no fit'}
+    assert final == {'left': (0.0, 0.01)}
+
+
+def test_iterate_zero_rounds_measures_nothing():
+    def measure(params, omega_cmds):
+        raise AssertionError('must not measure')
+    final, rounds, status = iterate_feedforward(
+        measure, {'left': (0.1, 0.02)}, CMDS, tolerance=0.05,
+        max_rounds=0, select=select_range)
+    assert rounds == [] and final == {}
+    assert status == {'left': 'max rounds'}
+
+
+# joint_velocity_limit
+
+URDF = """<robot name="r">
+  <joint name="left_wheel_joint" type="continuous"/>
+  <ros2_control name="x" type="system">
+    <joint name="left_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min" value="-10.0"/>
+        <param name="max" value="10.0"/>
+      </command_interface>
+    </joint>
+    <joint name="right_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-8.0</param>
+        <param name="max">12.0</param>
+      </command_interface>
+    </joint>
+  </ros2_control>
+</robot>"""
+
+
+def test_joint_velocity_limit_is_the_smallest_bound():
+    assert joint_velocity_limit(
+        URDF, ['left_wheel_joint', 'right_wheel_joint']) == 8.0
+
+
+def test_joint_velocity_limit_single_joint():
+    assert joint_velocity_limit(URDF, ['left_wheel_joint']) == 10.0
+
+
+@pytest.mark.parametrize('urdf, joints', [
+    (URDF, ['left_wheel_joint', 'missing_joint']),
+    ('<robot name="r"><joint name="left_wheel_joint"/></robot>',
+     ['left_wheel_joint']),
+    ('not xml', ['left_wheel_joint']),
+])
+def test_joint_velocity_limit_missing_is_none(urdf, joints):
+    assert joint_velocity_limit(urdf, joints) is None

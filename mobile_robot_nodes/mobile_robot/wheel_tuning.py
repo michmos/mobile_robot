@@ -8,8 +8,10 @@ in; the script converts them to linear.x (m/s) with the wheel radius.
 Modes (--mode):
   ff   sweeps a list of wheel speeds with kp = ki = 0, so the duty of every
        point is known (feedforward only), and fits min_duty and slope per
-       wheel. --baseline starts from min_duty = 0, slope = 0.1, then a
-       command of N rad/s is a duty of N / 10.
+       wheel through the points between --fit-min and --fit-max rad/s.
+       --baseline starts from min_duty = 0, slope = 0.1, then a command of
+       N rad/s is a duty of N / 10. --iterate N then applies the fit,
+       measures the speed error and refits until it is within --tolerance.
   pid  runs step responses with the feedforward in effect and the given
        kp / ki / integral_limit, and reports rise time, overshoot, settling
        time and steady state error per wheel.
@@ -35,7 +37,10 @@ from mobile_robot.tuning_analysis import (
     FfPoint,
     fit_feedforward,
     is_stalled,
+    iterate_feedforward,
+    joint_velocity_limit,
     mean_velocity,
+    select_fit_points,
     smooth,
     step_metrics,
     wheel_to_linear,
@@ -56,10 +61,20 @@ TUNING_PARAMS = ('pid_kp', 'pid_ki', 'pid_integral_limit',
 # component's node is named after it
 DEFAULT_PARAM_NODE = '/mobile_robot_ros2_control'
 CONTROLLER_NODE = '/mobile_robot_controller'
+# holds robot_description, the joint limits are read from it
+DESCRIPTION_NODE = '/robot_state_publisher'
 # properties.xacro, used when the controller can't be asked
 DEFAULT_WHEEL_RADIUS = 0.0335
-# command_interface max of the wheel joints in ros2_control.xacro
+# command_interface max of the wheel joints in ros2_control.xacro, used
+# when the robot description can't be read
 JOINT_VELOCITY_LIMIT = 10.0
+# --baseline sweep: duty 0.15 .. 0.5 in 0.025 steps, the part of the motor
+# curve the robot drives in (0.5 is already faster than the joint limit)
+BASELINE_SPEEDS = [1.5 + 0.25 * i for i in range(15)]
+# without --baseline the feedforward is roughly tuned, speed ~ command
+DEFAULT_SPEEDS = [float(s) for s in range(1, 11)]
+# a faster position change is a jump of the reported position, not motion
+MAX_PLAUSIBLE_RATE = 40.0
 # twist_mux and the controller drop a command after 0.5 s
 COMMAND_RATE_HZ = 20.0
 SERVICE_TIMEOUT = 5.0
@@ -231,6 +246,10 @@ class TuningRun:
         self._original = None
         self._current = None
         self._radius = None
+        self._fit_max = None
+        # the first point after a handshake gets a longer settle
+        self._fresh_handshake = False
+        self._sweep_points = {}
         self.fits = {}
         self.ff_rows = []
         self.pid_rows = []
@@ -254,11 +273,29 @@ class TuningRun:
             raise TuningError(f'could not read the parameters of '
                               f'{self._param_node}')
         self._current = dict(self._original)
+        self._fit_max = args.fit_max
+        if self._fit_max is None:
+            self._fit_max = self._joint_limit() + args.fit_margin
         self._log(f'parameter node {self._param_node}, wheel radius '
-                  f'{self._radius} m')
+                  f'{self._radius} m, fitting {args.fit_min} .. '
+                  f'{self._fit_max} rad/s')
         self._log('commands go to ' + args.topic + ', a higher priority '
                   'twist_mux input (joystick, /cmd_vel_joy) overrides them, '
                   'keep it idle')
+
+    def _joint_limit(self):
+        got = self._node.get_params(DESCRIPTION_NODE, ['robot_description'])
+        limit = None
+        if got:
+            limit = joint_velocity_limit(
+                got['robot_description'],
+                [self._args.left_joint, self._args.right_joint])
+        if limit is None:
+            self._log(f'could not read the joint velocity limit from '
+                      f'{DESCRIPTION_NODE}, using {JOINT_VELOCITY_LIMIT} '
+                      'rad/s')
+            return JOINT_VELOCITY_LIMIT
+        return limit
 
     # ---- feedforward ----
 
@@ -271,52 +308,138 @@ class TuningRun:
                            'ff_min_duty_right': 0.0})
         self._apply(target)
 
+        points = self._sweep(args.speeds, round_number=0)
+        self._sweep_points = {wheel: [p for d in points[wheel].values()
+                                      for p in d] for wheel in WHEELS}
+        self._report_ff(points)
+        if args.iterate > 0:
+            self._iterate()
+
+    def _sweep(self, speeds, round_number):
+        """
+        Measure every speed in every direction with the current params.
+
+        :returns dict: {wheel: {direction: [FfPoint]}} in sweep order
+        """
+        args = self._args
         points = {wheel: {d: [] for d in self._directions()}
                   for wheel in WHEELS}
         for direction in self._directions():
             sign = 1.0 if direction == 'forward' else -1.0
-            for omega in args.speeds:
+            for omega in speeds:
                 omega_cmd = sign * omega
                 self._node.command(wheel_to_linear(omega_cmd, self._radius))
-                self._node.spin_for(args.settle)
+                settle = args.settle
+                if self._fresh_handshake:
+                    # the first point after a handshake was off before
+                    settle += args.first_settle
+                    self._fresh_handshake = False
+                self._node.spin_for(settle)
                 samples = self._node.record(args.measure)
                 line = [f'{direction:7} cmd {omega_cmd:6.2f} rad/s']
                 for wheel in WHEELS:
-                    duty = feedforward_duty(
-                        omega_cmd, self._current[f'ff_slope_{wheel}'],
-                        self._current[f'ff_min_duty_{wheel}'])
-                    actual = mean_velocity(
-                        [(t, p) for t, p, _ in samples[wheel]])
-                    stalled = is_stalled(omega_cmd, actual,
-                                         args.stall_threshold)
-                    if (actual is not None and
-                            abs(actual) >= args.stall_threshold and
-                            math.copysign(1.0, actual) !=
-                            math.copysign(1.0, omega_cmd)):
-                        self._log(f'{wheel} wheel turns the wrong way, check '
-                                  'invert_left/invert_right')
-                    points[wheel][direction].append(
-                        FfPoint(duty, actual if actual is not None else 0.0,
-                                stalled))
+                    point, actual = self._measure_point(
+                        wheel, omega_cmd, samples[wheel])
+                    points[wheel][direction].append(point)
                     self.ff_rows.append({
-                        'mode': 'ff', 'wheel': wheel,
+                        'mode': 'ff', 'round': round_number, 'wheel': wheel,
                         'direction': direction, 'omega_cmd': omega_cmd,
-                        'duty': duty, 'omega_actual': actual,
-                        'stalled': stalled})
+                        'duty': point.duty, 'omega_actual': actual,
+                        'stalled': point.stalled})
                     shown = 'n/a' if actual is None else f'{actual:6.2f}'
-                    line.append(f'{wheel} duty {duty:5.3f} -> {shown} rad/s'
-                                + (' (stalled)' if stalled else ''))
+                    line.append(f'{wheel} duty {point.duty:5.3f} -> {shown} '
+                                'rad/s' +
+                                (' (stalled)' if point.stalled else ''))
                 self._log(' | '.join(line))
             self._stop()
+        return points
 
-        self._report_ff(points)
+    def _measure_point(self, wheel, omega_cmd, samples):
+        args = self._args
+        duty = feedforward_duty(
+            omega_cmd, self._current[f'ff_slope_{wheel}'],
+            self._current[f'ff_min_duty_{wheel}'])
+        actual = mean_velocity([(t, p) for t, p, _ in samples],
+                               max_rate=MAX_PLAUSIBLE_RATE)
+        stalled = is_stalled(omega_cmd, actual, args.stall_threshold)
+        if (actual is not None and abs(actual) >= args.stall_threshold and
+                math.copysign(1.0, actual) != math.copysign(1.0, omega_cmd)):
+            self._log(f'{wheel} wheel turns the wrong way, check '
+                      f'invert_motor_{wheel} / invert_encoder_{wheel}')
+        return (FfPoint(duty, actual if actual is not None else 0.0,
+                        stalled), actual)
+
+    def _select(self, points):
+        args = self._args
+        return select_fit_points(
+            points, args.fit_min, self._fit_max, args.saturation,
+            args.stall_margin, args.outlier)
+
+    def _iterate(self):
+        args = self._args
+        missing = [wheel for wheel in WHEELS if wheel not in self.fits]
+        if missing:
+            print(f'\nno fit for {missing}, skipping --iterate')
+            return
+        start = {wheel: (self.fits[wheel][f'ff_min_duty_{wheel}'],
+                         self.fits[wheel][f'ff_slope_{wheel}'])
+                 for wheel in WHEELS}
+        # 1 rad/s is right above the deadband, a few % error there is
+        # stiction, not the feedforward
+        speeds = args.verify_speeds or [
+            s for s in DEFAULT_SPEEDS
+            if max(args.fit_min, 2.0) <= s <=
+            min(self._fit_max, JOINT_VELOCITY_LIMIT)]
+        sign_speeds = [(1.0 if d == 'forward' else -1.0) * s
+                       for d in self._directions() for s in speeds]
+        round_counter = [0]
+
+        def measure(params, _omega_cmds):
+            round_counter[0] += 1
+            values = {}
+            for wheel, (min_duty, slope) in params.items():
+                values[f'ff_min_duty_{wheel}'] = round(min_duty, 4)
+                values[f'ff_slope_{wheel}'] = round(slope, 4)
+            self._apply(values)
+            self._log(f'iteration round {round_counter[0]}: ' + ', '.join(
+                f'{k}={v}' for k, v in values.items()))
+            swept = self._sweep(speeds, round_number=round_counter[0])
+            return {wheel: [p for d in self._directions()
+                            for p in swept[wheel][d]]
+                    for wheel in WHEELS}
+
+        final, rounds, status = iterate_feedforward(
+            measure, start, sign_speeds, args.tolerance, args.iterate,
+            lambda points: self._select(points)[0], seed=self._sweep_points)
+
+        print('\n==== feedforward iteration ====')
+        print('round wheel  min_duty   slope    max error  mean error')
+        for r in rounds:
+            print(f'{r.round:5} {r.wheel:5}  {r.min_duty:8.4f}  '
+                  f'{r.slope:7.4f}  {r.max_error * 100:8.1f} %  '
+                  f'{r.mean_error * 100:8.1f} %')
+        for wheel in WHEELS:
+            min_duty, slope = final[wheel]
+            print(f'{wheel}: {status[wheel]}, best min_duty {min_duty:.4f}, '
+                  f'slope {slope:.4f}')
+            if status[wheel] != 'converged':
+                print(f'  the error stays above {args.tolerance * 100:.0f} %:'
+                      ' a straight line does not fit the motor curve over '
+                      'these speeds. A smaller --fit-max (and '
+                      '--verify-speeds) tunes the range the robot drives in '
+                      'most, the PI corrects the rest')
+            self.fits[wheel] = {f'ff_min_duty_{wheel}': round(min_duty, 4),
+                                f'ff_slope_{wheel}': round(slope, 4)}
+        print('\nsuggested:')
+        for values in self.fits.values():
+            for name, value in values.items():
+                print(f'  ros2 param set {self._param_node} {name} {value}')
 
     def _directions(self):
         return {'forward': ['forward'], 'reverse': ['reverse'],
                 'both': ['forward', 'reverse']}[self._args.direction]
 
     def _report_ff(self, points):
-        args = self._args
         print('\n==== feedforward ====')
         for wheel in WHEELS:
             all_points = [p for d in points[wheel].values() for p in d]
@@ -326,15 +449,20 @@ class TuningRun:
                   '(lowest moving). Sweeping downwards (--speeds 3 2.5 2 '
                   '...) finds where a turning wheel stalls, a little above '
                   'that is a good min_duty.')
+            used, excluded = self._select(all_points)
+            for point, reason in excluded:
+                if reason != 'stalled':
+                    print(f'  not fitted ({reason}): duty {point.duty:6.3f}'
+                          f' -> {point.omega_actual:6.2f} rad/s')
             for direction, dir_points in points[wheel].items():
-                fit = fit_feedforward(dir_points, args.saturation)
+                fit = fit_feedforward(self._select(dir_points)[0])
                 print(f'  {direction:7}: {_fmt_fit(fit)}')
-            fit = fit_feedforward(all_points, args.saturation)
+            fit = fit_feedforward(used)
             if len(points[wheel]) > 1:
                 print(f'  combined: {_fmt_fit(fit)}')
             if fit is None or not fit.slope > 0.0:
-                print('  no usable fit, needs two moving points below the '
-                      'saturation at different speeds')
+                print('  no usable fit, needs two moving points in the fit '
+                      'range at different speeds')
                 continue
             min_duty = fit.min_duty
             if min_duty < 0.0:
@@ -419,6 +547,7 @@ class TuningRun:
         self._node.set_params(self._param_node, changed)
         self._current.update(changed)
         self._node.spin_for(self._args.handshake_wait)
+        self._fresh_handshake = True
 
     def _stop(self):
         self._node.command(0.0)
@@ -448,7 +577,8 @@ class TuningRun:
         rows = self.ff_rows + self.pid_rows
         if not rows:
             return
-        fields = ['mode', 'wheel', 'direction', 'segment', 'omega_cmd',
+        fields = ['mode', 'round', 'wheel', 'direction', 'segment',
+                  'omega_cmd',
                   'duty', 'omega_actual', 'stalled', 't', 'velocity',
                   'velocity_smoothed']
         with open(path, 'w', newline='') as file:
@@ -514,18 +644,42 @@ def parse_args(argv):
                     help='start from min_duty = 0, slope = 0.1 (duty = '
                     'speed / 10), otherwise the current feedforward is used')
     ff.add_argument('--speeds', type=float, nargs='+',
-                    default=[float(s) for s in range(1, 11)],
-                    help='wheel rad/s in sweep order, > 0 (default 1..10)')
+                    help='wheel rad/s in sweep order, > 0 (default with '
+                    '--baseline 1.5 .. 5 in 0.25 steps, i.e. duty 0.15 .. '
+                    '0.5, else 1 .. 10)')
     ff.add_argument('--direction', choices=('forward', 'reverse', 'both'),
                     default='forward')
     ff.add_argument('--settle', type=float, default=1.0,
                     help='s to wait at each speed before measuring')
+    ff.add_argument('--first-settle', type=float, default=2.0,
+                    help='extra s for the first point after a handshake')
     ff.add_argument('--measure', type=float, default=3.0,
                     help='s over which the speed is measured')
     ff.add_argument('--stall-threshold', type=float, default=0.2,
                     help='rad/s below which a wheel counts as stalled')
     ff.add_argument('--saturation', type=float, default=0.9,
                     help='points at this duty or more are not fitted')
+    ff.add_argument('--fit-min', type=float, default=1.0,
+                    help='rad/s, slower points are not fitted')
+    ff.add_argument('--fit-max', type=float,
+                    help='rad/s, faster points are not fitted (default: '
+                    'joint velocity limit + --fit-margin)')
+    ff.add_argument('--fit-margin', type=float, default=1.0,
+                    help='rad/s above the joint velocity limit still fitted')
+    ff.add_argument('--stall-margin', type=float, default=0.025,
+                    help='duty, points less than this above the highest '
+                    'stalled duty are not fitted')
+    ff.add_argument('--outlier', type=float, default=0.4,
+                    help='relative speed deviation from the neighbouring '
+                    'points above which a point is not fitted')
+    ff.add_argument('--iterate', type=int, default=0,
+                    help='rounds of apply fit -> measure error -> refit '
+                    '(0: only the sweep)')
+    ff.add_argument('--tolerance', type=float, default=0.05,
+                    help='relative speed error at which --iterate stops')
+    ff.add_argument('--verify-speeds', type=float, nargs='+',
+                    help='wheel rad/s measured in each --iterate round '
+                    '(default 2 .. 10 within the fit range)')
 
     pid = parser.add_argument_group('PI (--mode pid / all)')
     pid.add_argument('--kp', type=float)
@@ -543,9 +697,12 @@ def parse_args(argv):
                      help='rad/s, lower limit of the settling band')
 
     args = parser.parse_args(argv)
-    for speed in args.speeds:
+    if args.speeds is None:
+        args.speeds = BASELINE_SPEEDS if args.baseline else DEFAULT_SPEEDS
+    for speed in args.speeds + (args.verify_speeds or []):
         if not 0.0 < speed <= JOINT_VELOCITY_LIMIT:
-            parser.error(f'--speeds must be in (0, {JOINT_VELOCITY_LIMIT}], '
+            parser.error('--speeds / --verify-speeds must be in '
+                         f'(0, {JOINT_VELOCITY_LIMIT}], '
                          f'got {speed}')
     for step in args.steps:
         if abs(step) > JOINT_VELOCITY_LIMIT:
@@ -553,6 +710,10 @@ def parse_args(argv):
                          f'got {step}')
     if args.smooth < 1:
         parser.error('--smooth must be >= 1')
+    if args.iterate < 0:
+        parser.error('--iterate must be >= 0')
+    if not args.tolerance > 0.0:
+        parser.error('--tolerance must be > 0')
     if args.csv is None:
         args.csv = datetime.datetime.now().strftime(
             'wheel_tuning_%Y%m%d_%H%M%S.csv')
