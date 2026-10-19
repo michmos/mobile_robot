@@ -62,6 +62,8 @@ from rclpy.signals import SignalHandlerOptions
 from sensor_msgs.msg import JointState
 
 WHEELS = ('left', 'right')
+# wheel joints of ros2_control.xacro
+JOINT_NAMES = {'left': 'left_wheel_joint', 'right': 'right_wheel_joint'}
 TUNING_PARAMS = ('pid_kp', 'pid_ki', 'pid_integral_limit',
                  'ff_slope_left', 'ff_slope_right',
                  'ff_min_duty_left', 'ff_min_duty_right')
@@ -83,6 +85,20 @@ BASELINE_SPEEDS = [1.5 + 0.25 * i for i in range(15)]
 DEFAULT_SPEEDS = [float(s) for s in range(1, 11)]
 # a faster position change is a jump of the reported position, not motion
 MAX_PLAUSIBLE_RATE = 40.0
+# ---- fixed tuning knobs, rarely worth changing ----
+# rad/s above the joint velocity limit that are still fitted
+FIT_MARGIN = 1.0
+# duty above the highest stalled duty of a direction that isn't fitted yet
+STALL_MARGIN = 0.025
+# points at this |duty| or more aren't fitted, the duty is clamped there
+SATURATION = 0.9
+# samples of the centered moving average of the step responses
+SMOOTH_WINDOW = 5
+# settling band, fraction of the step
+SETTLE_BAND = 0.05
+# rad/s, lower limit of the settling band and noise floor of the
+# oscillation check, about one encoder tick per 50 Hz report
+NOISE_FLOOR = 0.3
 # twist_mux and the controller drop a command after 0.5 s
 COMMAND_RATE_HZ = 20.0
 SERVICE_TIMEOUT = 5.0
@@ -98,8 +114,7 @@ class WheelTuning(Node):
     def __init__(self, args):
         super().__init__('wheel_tuning')
         self._args = args
-        self._joint_names = {'left': args.left_joint,
-                             'right': args.right_joint}
+        self._joint_names = dict(JOINT_NAMES)
         self._linear = 0.0
         self._last_joint_state = None
         # {wheel: [(t, position, velocity)]} while recording, else None
@@ -306,7 +321,7 @@ class TuningRun:
         self._current = dict(self._original)
         self._fit_max = args.fit_max
         if self._fit_max is None:
-            self._fit_max = self._joint_limit() + args.fit_margin
+            self._fit_max = self._joint_limit() + FIT_MARGIN
         self._log(f'parameter node {self._param_node}, wheel radius '
                   f'{self._radius} m, fitting {args.fit_min} .. '
                   f'{self._fit_max} rad/s')
@@ -319,8 +334,7 @@ class TuningRun:
         limit = None
         if got:
             limit = joint_velocity_limit(
-                got['robot_description'],
-                [self._args.left_joint, self._args.right_joint])
+                got['robot_description'], list(JOINT_NAMES.values()))
         if limit is None:
             self._log(f'could not read the joint velocity limit from '
                       f'{DESCRIPTION_NODE}, using {JOINT_VELOCITY_LIMIT} '
@@ -403,8 +417,8 @@ class TuningRun:
     def _select(self, points):
         args = self._args
         return select_fit_points(
-            points, args.fit_min, self._fit_max, args.saturation,
-            args.stall_margin, args.outlier)
+            points, args.fit_min, self._fit_max, SATURATION, STALL_MARGIN,
+            args.outlier)
 
     def _iterate(self):
         args = self._args
@@ -555,7 +569,7 @@ class TuningRun:
             for wheel in WHEELS:
                 times = [t for t, _, _ in samples[wheel]]
                 raw = [v for _, _, v in samples[wheel]]
-                smoothed = smooth(raw, args.smooth) if raw else []
+                smoothed = smooth(raw, SMOOTH_WINDOW) if raw else []
                 for t, v, sm in zip(times, raw, smoothed):
                     self.pid_rows.append({
                         'mode': 'pid', 'kp': kp, 'ki': ki, 'wheel': wheel,
@@ -566,8 +580,8 @@ class TuningRun:
                     continue
                 metrics = step_metrics(
                     times, smoothed, previous, omega,
-                    band_fraction=args.settle_band,
-                    band_min=args.settle_band_min)
+                    band_fraction=SETTLE_BAND,
+                    band_min=NOISE_FLOOR)
                 self.pid_metrics.append((kp, ki, segment, wheel, previous,
                                          omega, metrics))
                 scores[wheel].append(step_score(
@@ -593,9 +607,9 @@ class TuningRun:
                 raw = [v for _, _, v in samples[wheel]]
                 if not raw:
                     continue
-                reason = check_step(times, smooth(raw, args.smooth), initial,
+                reason = check_step(times, smooth(raw, SMOOTH_WINDOW), initial,
                                     target, args.step_duration,
-                                    args.settle_band_min)
+                                    NOISE_FLOOR)
                 if reason is not None:
                     return f'{wheel} {reason}'
             return None
@@ -638,10 +652,10 @@ class TuningRun:
         print('\nsuggested (best combined, both wheels share the gains):')
         for name, value in self.best_pid.items():
             print(f'  ros2 param set {self._param_node} {name} {value}')
+        kps = sorted({r.kp for r in self.grid})
+        kis = sorted({r.ki for r in self.grid})
         print('refine with a finer grid around it, e.g. --kp '
-              f'{_fmt(best.kp * 0.7, 2)} {_fmt(best.kp, 2)} '
-              f'{_fmt(best.kp * 1.4, 2)} --ki {_fmt(best.ki * 0.7, 2)} '
-              f'{_fmt(best.ki, 2)} {_fmt(best.ki * 1.4, 2)}')
+              f'{_around(best.kp, kps)} --ki {_around(best.ki, kis)}')
 
     # ---- shared ----
 
@@ -714,6 +728,16 @@ def _fmt(value, digits=3):
     return 'n/a' if value is None else f'{value:.{digits}f}'
 
 
+def _around(best, grid):
+    """Three values of a finer grid around best, for the refine hint."""
+    if best == 0.0:
+        # 0 can't be scaled, go halfway to the next value of the grid
+        larger = [v for v in grid if v > 0.0]
+        step = larger[0] / 2.0 if larger else 0.5
+        return f'0 {_fmt(step / 2.0, 2)} {_fmt(step, 2)}'
+    return ' '.join(_fmt(best * f, 2) for f in (0.7, 1.0, 1.4))
+
+
 def _fmt_fit(fit):
     if fit is None:
         return 'not enough moving points'
@@ -722,95 +746,119 @@ def _fmt_fit(fit):
             f'{fit.rms_error:.4f}')
 
 
+DESCRIPTION = """\
+Tune the esp32's wheel feedforward and PI against the running robot launch.
+Speeds are wheel rad/s. --mode ff (default) fits min_duty and slope per wheel,
+--mode pid runs step responses or a kp / ki grid search, --mode all both.
+"""
+
+EXAMPLES = """
+examples (robot launch running, joystick idle):
+  bench, feedforward from scratch, then verify and correct it:
+    ros2 run mobile_robot wheel_tuning --baseline --direction both \\
+        --iterate 4 --battery-voltage 8.1 --note bench
+  floor, refine the current feedforward for the speeds driven most:
+    ros2 run mobile_robot wheel_tuning --iterate 3 --direction both \\
+        --fit-max 8 --verify-speeds 2 4 6 8 --note floor
+  PI, one run with given gains:
+    ros2 run mobile_robot wheel_tuning --mode pid --kp 0.5 --ki 2.0
+  PI grid, coarse first, then finer around the best it suggests:
+    ros2 run mobile_robot wheel_tuning --mode pid --kp 0.2 0.5 1 2 \\
+        --ki 0 1 2 4
+    ros2 run mobile_robot wheel_tuning --mode pid --kp 0.35 0.5 0.7 \\
+        --ki 0.7 1 1.4 --apply
+  everything in one go, keeping the result:
+    ros2 run mobile_robot wheel_tuning --mode all --baseline --iterate 3 \\
+        --kp 0.2 0.5 1 --ki 0 1 2 --apply
+
+All parameters are restored at the end unless --apply is given.
+"""
+
+
 def parse_args(argv):
     parser = argparse.ArgumentParser(
-        description=__doc__,
+        description=DESCRIPTION, epilog=EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--mode', choices=('ff', 'pid', 'all'), default='ff')
-    parser.add_argument('--topic', default='/cmd_vel_keyboard',
-                        help='TwistStamped input of twist_mux')
-    parser.add_argument('--param-node', default=DEFAULT_PARAM_NODE,
-                        help='node owning pid_kp / ff_* (found by itself '
-                        'if this one does not have them)')
-    parser.add_argument('--wheel-radius', type=float,
-                        help=f'm, default: {CONTROLLER_NODE} wheel_radius '
-                        f'or {DEFAULT_WHEEL_RADIUS}')
-    parser.add_argument('--left-joint', default='left_wheel_joint')
-    parser.add_argument('--right-joint', default='right_wheel_joint')
+    parser.add_argument('--mode', choices=('ff', 'pid', 'all'), default='ff',
+                        help='ff: feedforward (default), pid: step '
+                        'responses / grid search, all: ff then pid')
+    parser.add_argument('--apply', action='store_true',
+                        help='keep the result (fitted feedforward, given or '
+                        'best kp/ki) instead of restoring the parameters')
     parser.add_argument('--battery-voltage', type=float,
                         help='V, written to the CSV, the slope scales with it')
     parser.add_argument('--note', default='',
                         help='free text for the CSV, e.g. bench / floor')
     parser.add_argument('--csv', help='raw data file, default '
                         'wheel_tuning_<time>.csv in the current directory')
-    parser.add_argument('--apply', action='store_true',
-                        help='keep the fitted feedforward and the given '
-                        'kp/ki/integral_limit instead of restoring')
-    parser.add_argument('--handshake-wait', type=float, default=2.0,
-                        help='s to wait after a parameter change')
 
     ff = parser.add_argument_group('feedforward (--mode ff / all)')
     ff.add_argument('--baseline', action='store_true',
                     help='start from min_duty = 0, slope = 0.1 (duty = '
                     'speed / 10), otherwise the current feedforward is used')
-    ff.add_argument('--speeds', type=float, nargs='+',
-                    help='wheel rad/s in sweep order, > 0 (default with '
-                    '--baseline 1.5 .. 5 in 0.25 steps, i.e. duty 0.15 .. '
-                    '0.5, else 1 .. 10)')
     ff.add_argument('--direction', choices=('forward', 'reverse', 'both'),
                     default='forward')
-    ff.add_argument('--settle', type=float, default=1.0,
-                    help='s to wait at each speed before measuring')
-    ff.add_argument('--first-settle', type=float, default=2.0,
-                    help='extra s for the first point after a handshake')
-    ff.add_argument('--measure', type=float, default=3.0,
-                    help='s over which the speed is measured')
-    ff.add_argument('--stall-threshold', type=float, default=0.2,
-                    help='rad/s below which a wheel counts as stalled')
-    ff.add_argument('--saturation', type=float, default=0.9,
-                    help='points at this duty or more are not fitted')
-    ff.add_argument('--fit-min', type=float, default=1.0,
-                    help='rad/s, slower points are not fitted')
-    ff.add_argument('--fit-max', type=float,
-                    help='rad/s, faster points are not fitted (default: '
-                    'joint velocity limit + --fit-margin)')
-    ff.add_argument('--fit-margin', type=float, default=1.0,
-                    help='rad/s above the joint velocity limit still fitted')
-    ff.add_argument('--stall-margin', type=float, default=0.025,
-                    help='duty, points less than this above the highest '
-                    'stalled duty are not fitted')
-    ff.add_argument('--outlier', type=float, default=0.4,
-                    help='relative speed deviation from the neighbouring '
-                    'points above which a point is not fitted')
-    ff.add_argument('--iterate', type=int, default=0,
-                    help='rounds of apply fit -> measure error -> refit '
-                    '(0: only the sweep)')
-    ff.add_argument('--tolerance', type=float, default=0.05,
-                    help='relative speed error at which --iterate stops')
-    ff.add_argument('--verify-speeds', type=float, nargs='+',
-                    help='wheel rad/s measured in each --iterate round '
-                    '(default 2 .. 10 within the fit range)')
+    ff.add_argument('--speeds', type=float, nargs='+',
+                    help='wheel rad/s in sweep order (default with '
+                    '--baseline 1.5 .. 5 in 0.25 steps, i.e. duty 0.15 .. '
+                    '0.5, else 1 .. 10)')
+    ff.add_argument('--iterate', type=int, default=0, metavar='N',
+                    help='rounds of apply fit -> measure speed error -> '
+                    'refit, until within --tolerance (default 0: sweep only)')
 
     pid = parser.add_argument_group('PI (--mode pid / all)')
     pid.add_argument('--kp', type=float, nargs='+',
-                     help='one value, or a list for a grid search')
+                     help='one value, or a list for a grid search (default: '
+                     'current)')
     pid.add_argument('--ki', type=float, nargs='+',
-                     help='one value, or a list for a grid search')
-    pid.add_argument('--integral-limit', type=float)
+                     help='one value, or a list for a grid search (default: '
+                     'current)')
+    pid.add_argument('--integral-limit', type=float,
+                     help='duty fraction (default: current)')
     pid.add_argument('--steps', type=float, nargs='+', default=[3.0, 6.0, 3.0],
-                     help='wheel rad/s targets, from rest, each held '
-                     '--step-duration s (default 3 6 3)')
-    pid.add_argument('--step-duration', type=float, default=3.0)
-    pid.add_argument('--smooth', type=int, default=5,
-                     help='samples of the centered moving average')
-    pid.add_argument('--settle-band', type=float, default=0.05,
-                     help='settling band, fraction of the step')
-    pid.add_argument('--settle-band-min', type=float, default=0.3,
-                     help='rad/s, lower limit of the settling band, also '
-                     'the noise floor of the oscillation check')
-    pid.add_argument('--overshoot-weight', type=float, default=1.0,
+                     help='wheel rad/s targets, from rest (default 3 6 3)')
+
+    adv = parser.add_argument_group(
+        'advanced', 'rarely needed, the defaults fit this robot')
+    adv.add_argument('--fit-min', type=float, default=1.0,
+                     help='rad/s, slower points are not fitted (default 1)')
+    adv.add_argument('--fit-max', type=float,
+                     help='rad/s, faster points are not fitted (default: '
+                     f'joint velocity limit + {FIT_MARGIN})')
+    adv.add_argument('--tolerance', type=float, default=0.05,
+                     help='relative speed error at which --iterate stops '
+                     '(default 0.05)')
+    adv.add_argument('--verify-speeds', type=float, nargs='+',
+                     help='wheel rad/s measured in each --iterate round '
+                     '(default 2 .. 10 within the fit range)')
+    adv.add_argument('--outlier', type=float, default=0.4,
+                     help='relative speed deviation from the neighbouring '
+                     'points above which a point is not fitted (default 0.4)')
+    adv.add_argument('--stall-threshold', type=float, default=0.2,
+                     help='rad/s below which a wheel counts as stalled '
+                     '(default 0.2)')
+    adv.add_argument('--overshoot-weight', type=float, default=1.0,
                      help='weight of the overshoot (fraction of the step) '
-                     'in the grid score')
+                     'in the grid score (default 1)')
+    adv.add_argument('--settle', type=float, default=1.0,
+                     help='s at each speed before measuring (default 1)')
+    adv.add_argument('--measure', type=float, default=3.0,
+                     help='s over which the speed is measured (default 3)')
+    adv.add_argument('--first-settle', type=float, default=2.0,
+                     help='extra s for the first point after a handshake '
+                     '(default 2)')
+    adv.add_argument('--step-duration', type=float, default=3.0,
+                     help='s each PI step is held (default 3)')
+    adv.add_argument('--handshake-wait', type=float, default=2.0,
+                     help='s to wait after a parameter change (default 2)')
+    adv.add_argument('--topic', default='/cmd_vel_keyboard',
+                     help='TwistStamped input of twist_mux')
+    adv.add_argument('--param-node', default=DEFAULT_PARAM_NODE,
+                     help='node owning pid_kp / ff_* (found by itself if '
+                     'this one does not have them)')
+    adv.add_argument('--wheel-radius', type=float,
+                     help=f'm, default: {CONTROLLER_NODE} wheel_radius or '
+                     f'{DEFAULT_WHEEL_RADIUS}')
 
     args = parser.parse_args(argv)
     if args.speeds is None:
@@ -818,14 +866,11 @@ def parse_args(argv):
     for speed in args.speeds + (args.verify_speeds or []):
         if not 0.0 < speed <= JOINT_VELOCITY_LIMIT:
             parser.error('--speeds / --verify-speeds must be in '
-                         f'(0, {JOINT_VELOCITY_LIMIT}], '
-                         f'got {speed}')
+                         f'(0, {JOINT_VELOCITY_LIMIT}], got {speed}')
     for step in args.steps:
         if abs(step) > JOINT_VELOCITY_LIMIT:
             parser.error(f'--steps must be within +-{JOINT_VELOCITY_LIMIT}, '
                          f'got {step}')
-    if args.smooth < 1:
-        parser.error('--smooth must be >= 1')
     if args.iterate < 0:
         parser.error('--iterate must be >= 0')
     if not args.tolerance > 0.0:
