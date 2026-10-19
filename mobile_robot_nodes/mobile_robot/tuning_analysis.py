@@ -585,3 +585,43 @@ def rank_grid(results, wheel=None):
             return combined_score(result)
         return result.scores.get(wheel, math.inf)
     return sorted(results, key=key)
+
+
+def best_pid_values(grid):
+    """
+    Pick the PI gains of the best combination that was not aborted.
+
+    :param grid: [GridResult] of the run
+    :returns dict: {'pid_kp': kp, 'pid_ki': ki}, None if the grid is empty or
+        every combination was aborted
+    """
+    if not grid:
+        return None
+    best = rank_grid(grid)[0]
+    if best.reason is not None:
+        return None
+    return {'pid_kp': best.kp, 'pid_ki': best.ki}
+
+
+def values_to_keep(clean, fitted, pid_best, integral_limit=None):
+    """
+    Choose the tuned values that --apply keeps after a run.
+
+    Only a clean run keeps anything: after Ctrl-C or an error the fit may not
+    be verified and the gains may be the ones that were being tried.
+
+    :param clean: the run ended without interruption or error
+    :param fitted: {param: value} of the fitted feedforward
+    :param pid_best: {'pid_kp': kp, 'pid_ki': ki} from best_pid_values(),
+        None if no PI combination was kept
+    :param integral_limit: the given --integral-limit, or None
+    :returns dict: {param: value} to set on top of the original parameters
+    """
+    if not clean:
+        return {}
+    kept = dict(fitted)
+    if pid_best is not None:
+        kept.update(pid_best)
+        if integral_limit is not None:
+            kept['pid_integral_limit'] = integral_limit
+    return kept

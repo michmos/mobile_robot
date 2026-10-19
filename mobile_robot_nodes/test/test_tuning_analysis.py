@@ -3,6 +3,7 @@
 import math
 
 from mobile_robot.tuning_analysis import (
+    best_pid_values,
     check_step,
     combined_score,
     deadband_bracket,
@@ -26,6 +27,7 @@ from mobile_robot.tuning_analysis import (
     smooth,
     step_metrics,
     step_score,
+    values_to_keep,
     wheel_to_linear,
 )
 import pytest
@@ -715,3 +717,59 @@ def test_combined_score():
     assert combined_score(GridResult(1.0, 1.0, {'left': 0.2},
                                      'right no progress')) == math.inf
     assert combined_score(GridResult(1.0, 1.0, {}, None)) == math.inf
+
+
+# best_pid_values
+
+def test_best_pid_values_best_not_aborted():
+    grid = [
+        GridResult(2.0, 4.0, {'left': 0.1, 'right': 0.1}, 'left oscillating'),
+        GridResult(0.5, 1.0, {'left': 0.3, 'right': 0.3}, None),
+        GridResult(1.0, 1.0, {'left': 0.2, 'right': 0.6}, None),
+    ]
+    assert best_pid_values(grid) == {'pid_kp': 0.5, 'pid_ki': 1.0}
+
+
+def test_best_pid_values_all_aborted_is_none():
+    grid = [GridResult(2.0, 4.0, {}, 'left oscillating'),
+            GridResult(1.0, 4.0, {}, 'right no progress')]
+    assert best_pid_values(grid) is None
+
+
+def test_best_pid_values_empty_is_none():
+    assert best_pid_values([]) is None
+
+
+def test_best_pid_values_single_combination():
+    grid = [GridResult(0.5, 2.0, {'left': 0.3}, None)]
+    assert best_pid_values(grid) == {'pid_kp': 0.5, 'pid_ki': 2.0}
+
+
+# values_to_keep
+
+FITTED = {'ff_min_duty_left': 0.2, 'ff_slope_left': 0.09}
+PID_BEST = {'pid_kp': 0.5, 'pid_ki': 1.0}
+
+
+def test_values_to_keep_unclean_run_keeps_nothing():
+    assert values_to_keep(False, FITTED, PID_BEST, 0.8) == {}
+    assert values_to_keep(False, FITTED, None) == {}
+
+
+def test_values_to_keep_clean_ff_only():
+    assert values_to_keep(True, FITTED, None) == FITTED
+
+
+def test_values_to_keep_clean_with_pid_and_integral_limit():
+    kept = values_to_keep(True, FITTED, PID_BEST, 0.8)
+    assert kept == {**FITTED, 'pid_kp': 0.5, 'pid_ki': 1.0,
+                    'pid_integral_limit': 0.8}
+
+
+def test_values_to_keep_no_pid_drops_integral_limit():
+    # every combination aborted: the integral limit belonged to them too
+    assert values_to_keep(True, FITTED, None, 0.8) == FITTED
+
+
+def test_values_to_keep_nothing_fitted():
+    assert values_to_keep(True, {}, None) == {}

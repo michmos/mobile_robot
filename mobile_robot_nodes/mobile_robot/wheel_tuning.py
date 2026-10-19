@@ -35,6 +35,7 @@ import time
 
 from geometry_msgs.msg import TwistStamped
 from mobile_robot.tuning_analysis import (
+    best_pid_values,
     check_step,
     combined_score,
     deadband_bracket,
@@ -51,6 +52,7 @@ from mobile_robot.tuning_analysis import (
     smooth,
     step_metrics,
     step_score,
+    values_to_keep,
     wheel_to_linear,
 )
 from rcl_interfaces.msg import ParameterType
@@ -545,6 +547,7 @@ class TuningRun:
                           f'ki {ki} ----')
             self.grid.append(self._run_steps(dict(base, pid_kp=kp,
                                                   pid_ki=ki)))
+        self.best_pid = best_pid_values(self.grid)
         self._report_pid()
 
     def _run_steps(self, gains):
@@ -646,10 +649,9 @@ class TuningRun:
                 print(f'  {rank:2}. kp {result.kp:6.3f} ki {result.ki:6.3f}  '
                       f'{shown}')
         best = rank_grid(self.grid)[0]
-        if best.reason is not None:
+        if self.best_pid is None:
             print('\nevery combination was aborted, try smaller gains')
             return
-        self.best_pid = {'pid_kp': best.kp, 'pid_ki': best.ki}
         print('\nsuggested (best combined, both wheels share the gains):')
         for name, value in self.best_pid.items():
             print(f'  ros2 param set {self._param_node} {name} {value}')
@@ -676,27 +678,58 @@ class TuningRun:
         self._node.command(0.0)
         self._node.spin_for(1.0)
 
-    def finish(self):
-        """Stop, then restore the parameters (or keep --apply ones)."""
-        self._node.command(0.0)
-        self._node.spin_for(0.2)
+    def finish(self, clean):
+        """
+        Stop, then set all tuning parameters in one call.
+
+        They are the originals, except that --apply keeps the tuned values
+        of a clean run (see values_to_keep). The full set is always sent, not
+        only the changes the script thinks it made, so a change that was in
+        flight when the run was interrupted is undone too.
+
+        :param clean: the run ended without interruption or error
+        """
         if self._original is None:
             return
+        args = self._args
+        fitted = {name: value for values in self.fits.values()
+                  for name, value in values.items()}
+        keep = (values_to_keep(clean, fitted, self.best_pid,
+                               args.integral_limit) if args.apply else {})
+        if args.apply and not clean:
+            self._log('--apply ignored, the run did not end cleanly '
+                      '(interrupted or error), restoring the original '
+                      'parameters')
+        elif args.apply and self.grid and self.best_pid is None:
+            self._log('--apply: every PI combination was aborted, keeping no '
+                      'PI gains, the original ones are restored')
         final = dict(self._original)
-        if self._args.apply:
-            for values in self.fits.values():
-                final.update(values)
-            if self.best_pid:
-                final.update(self.best_pid)
-            for name, values in (('pid_kp', self._args.kp),
-                                 ('pid_ki', self._args.ki)):
-                if values is not None and len(values) == 1:
-                    final[name] = values[0]
-            if self._args.integral_limit is not None:
-                final['pid_integral_limit'] = self._args.integral_limit
-        self._apply(final)
+        final.update(keep)
+        try:
+            self._node.command(0.0)
+            self._node.spin_for(0.2)
+            self._node.set_params(self._param_node, final)
+        except (KeyboardInterrupt, TuningError) as error:
+            self._log_restore_failure(error)
+            raise
+        if keep:
+            self._log('kept the tuned values: ' + ', '.join(
+                f'{k}={v}' for k, v in keep.items()))
+        else:
+            self._log('restored the original parameters')
         self._log('parameters now: ' + ', '.join(
-            f'{k}={v}' for k, v in self._current.items()))
+            f'{k}={v}' for k, v in final.items()))
+
+    def _log_restore_failure(self, error):
+        """Tell the user the original values and how to set them by hand."""
+        originals = ', '.join(f'{k}={v}' for k, v in self._original.items())
+        commands = '\n'.join(
+            f'  ros2 param set {self._param_node} {name} {value}'
+            for name, value in self._original.items())
+        self._node.get_logger().error(
+            f'could not restore the parameters of {self._param_node} '
+            f'({error!r}). Original values: {originals}\n'
+            f'set them by hand with:\n{commands}')
 
     def write_csv(self, path):
         rows = self.ff_rows + self.pid_rows
@@ -782,8 +815,10 @@ def parse_args(argv):
                         help='ff: feedforward (default), pid: step '
                         'responses / grid search, all: ff then pid')
     parser.add_argument('--apply', action='store_true',
-                        help='keep the result (fitted feedforward, given or '
-                        'best kp/ki) instead of restoring the parameters')
+                        help='keep the result (fitted feedforward, best '
+                        'non-aborted kp/ki) instead of restoring the '
+                        'parameters; only if the run ends cleanly, after '
+                        'Ctrl-C or an error the originals are restored')
     parser.add_argument('--label', default='',
                         help='free text for the CSV and the log, e.g. "bench '
                         '8.1V" or "floor". Including the battery voltage is '
@@ -891,12 +926,15 @@ def main(argv=None):
     node = WheelTuning(args)
     run = TuningRun(node, args)
     code = 0
+    # only a run that got to its end may keep --apply values
+    clean = False
     try:
         run.setup()
         if args.mode in ('ff', 'all'):
             run.run_ff()
         if args.mode in ('pid', 'all'):
             run.run_pid(use_fit=args.mode == 'all')
+        clean = True
     except KeyboardInterrupt:
         node.get_logger().warning('interrupted, stopping')
         code = 130
@@ -905,7 +943,7 @@ def main(argv=None):
         code = 1
     finally:
         try:
-            run.finish()
+            run.finish(clean)
         except (KeyboardInterrupt, TuningError) as error:
             node.get_logger().error(f'could not restore the parameters: '
                                     f'{error!r}')
