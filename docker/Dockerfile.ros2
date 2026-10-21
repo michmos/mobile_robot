@@ -46,9 +46,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-kilted-ament-cmake-clang-format \
       ros-kilted-twist-mux \
       ros-kilted-foxglove-bridge \
+      ros-kilted-slam-toolbox \
     && rm -rf /var/lib/apt/lists/*
 # ^ joy/teleop_twist_joy: used by mobile_robot_nodes/launch/joystick_launch.py
 #   but not declared in package.xml, desktop shipped them.
+# ^ slam_toolbox: SLAM mapping for the upcoming slam launch/config, pulls in
+#   nav2_map_server for saving maps.
 
 # compile check for the esp32 firmware (esp32_firmware/), not used at runtime
 # core pinned to 2.0.17 to match the maintainer's local Arduino setup - the
