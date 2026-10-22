@@ -10,8 +10,6 @@ enum e_direction { BACKWARDS = -1, FORWARDS = 1 };
 class L298N {
 private:
   static const uint32_t k_pwm_freq_hz_ = 1000;
-  static const uint8_t k_channel1_ = 1;
-  static const uint8_t k_channel2_ = 2;
 
   // ESP32 pins
   uint8_t ENA_Pin_;
@@ -54,10 +52,9 @@ public:
     digitalWrite(IN3_Pin_, LOW);
     digitalWrite(IN4_Pin_, LOW);
 
-    // set up one pwm channel for each motor, the channel numbers are fixed so
-    // both motors always get the same ledc channels (and timers)
-    ledcAttachChannel(ENA_Pin_, k_pwm_freq_hz_, pwm_res_, k_channel1_);
-    ledcAttachChannel(ENB_Pin_, k_pwm_freq_hz_, pwm_res_, k_channel2_);
+    // set up pwm for each motor, the core picks a free ledc channel per pin
+    ledcAttach(ENA_Pin_, k_pwm_freq_hz_, pwm_res_);
+    ledcAttach(ENB_Pin_, k_pwm_freq_hz_, pwm_res_);
   }
 
   // electrically shorts a motor's terminals (IN1==IN2) while keeping the

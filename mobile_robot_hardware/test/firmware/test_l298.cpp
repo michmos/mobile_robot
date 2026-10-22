@@ -24,8 +24,6 @@ constexpr uint8_t k_res = 16;
 constexpr uint32_t k_duty_max = (1u << k_res) - 1u;
 
 // fixed in L298.hpp
-constexpr uint8_t k_channel1 = 1;
-constexpr uint8_t k_channel2 = 2;
 constexpr uint32_t k_freq_hz = 1000;
 
 class L298Test : public ::testing::Test {
@@ -74,7 +72,6 @@ TEST_F(L298Test, SetupConfiguresOnePwmChannelPerMotor) {
   EXPECT_TRUE(c1.attached);
   EXPECT_EQ(c1.freq_hz, k_freq_hz);
   EXPECT_EQ(c1.resolution_bits, k_res);
-  EXPECT_EQ(c1.channel, k_channel1);
   // no duty until the first command
   EXPECT_FALSE(c1.written);
 
@@ -82,7 +79,6 @@ TEST_F(L298Test, SetupConfiguresOnePwmChannelPerMotor) {
   EXPECT_TRUE(c2.attached);
   EXPECT_EQ(c2.freq_hz, k_freq_hz);
   EXPECT_EQ(c2.resolution_bits, k_res);
-  EXPECT_EQ(c2.channel, k_channel2);
   EXPECT_FALSE(c2.written);
 }
 
