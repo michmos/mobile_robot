@@ -25,8 +25,8 @@ constexpr uint8_t k_pwmRes = 16;
 constexpr float k_dutyMax = 65535.0f;
 constexpr float k_ticksPerRev = 480.0f;
 constexpr float k_twoPi = 2.0f * static_cast<float>(M_PI);
-// ledc channels used by L298N
-constexpr uint8_t k_channelLeft = 1, k_channelRight = 2;
+// L298N enable pins carrying the pwm of the left (motor 1) and right motor
+constexpr uint8_t k_pwmPinLeft = k_ena, k_pwmPinRight = k_enb;
 
 constexpr float k_dutyTol = 1e-4f;
 
@@ -101,21 +101,21 @@ protected:
     drive_.updateMotor(e);
   }
 
-  // normalized duty last written to a motor's pwm channel
-  static float duty(uint8_t channel) {
-    return arduino_stub::ledcChannel(channel).duty / k_dutyMax;
+  // normalized duty last written to a motor's pwm pin
+  static float duty(uint8_t pin) {
+    return arduino_stub::ledcPin(pin).duty / k_dutyMax;
   }
 
   // IN pins both low with full duty: the L298 shorts the motor, it brakes
   static bool leftBraking() {
     return arduino_stub::digitalWritten(k_in1) == LOW &&
            arduino_stub::digitalWritten(k_in2) == LOW &&
-           arduino_stub::ledcChannel(k_channelLeft).duty == 65535u;
+           arduino_stub::ledcPin(k_pwmPinLeft).duty == 65535u;
   }
   static bool rightBraking() {
     return arduino_stub::digitalWritten(k_in3) == LOW &&
            arduino_stub::digitalWritten(k_in4) == LOW &&
-           arduino_stub::ledcChannel(k_channelRight).duty == 65535u;
+           arduino_stub::ledcPin(k_pwmPinRight).duty == 65535u;
   }
   static bool leftForwards() {
     return arduino_stub::digitalWritten(k_in1) == HIGH &&
@@ -167,7 +167,7 @@ TEST_F(DriveTest, UpdateConfigSkipsAResendOfTheSameHandshake) {
   EXPECT_FALSE(receiveConfig(1, defaultPayload()));
   EXPECT_TRUE(leftForwards());
   EXPECT_TRUE(rightForwards());
-  EXPECT_NEAR(duty(k_channelLeft), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinLeft), 0.2f, k_dutyTol);
   EXPECT_FALSE(logged("New configuration received"));
   // the re-send is still ACKed, the pi waits for that
   EXPECT_NE(Serial.output().find("S,ACK,1\n"), std::string::npos);
@@ -206,7 +206,7 @@ TEST_F(DriveTest, UpdateConfigBrakesAndResetsTheIntegrators) {
   updateMotor(0, 0, 0);      // first sample: feedforward only
   updateMotor(0, 0, 100000); // 0.2 ff, integral 0 -> 0.2
   updateMotor(0, 0, 200000); // 0.2 ff + 0.2 integral
-  ASSERT_NEAR(duty(k_channelLeft), 0.4f, k_dutyTol);
+  ASSERT_NEAR(duty(k_pwmPinLeft), 0.4f, k_dutyTol);
 
   ASSERT_TRUE(receiveConfig(2, p));
   EXPECT_TRUE(leftBraking());
@@ -215,11 +215,11 @@ TEST_F(DriveTest, UpdateConfigBrakesAndResetsTheIntegrators) {
   // after the new config only the feedforward is left: no stale velocity is
   // used on the first sample and the integrators start from zero
   updateMotor(0, 0, 300000);
-  EXPECT_NEAR(duty(k_channelLeft), 0.2f, k_dutyTol);
-  EXPECT_NEAR(duty(k_channelRight), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinLeft), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinRight), 0.2f, k_dutyTol);
   updateMotor(0, 0, 400000);
-  EXPECT_NEAR(duty(k_channelLeft), 0.2f, k_dutyTol);
-  EXPECT_NEAR(duty(k_channelRight), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinLeft), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinRight), 0.2f, k_dutyTol);
 }
 
 TEST_F(DriveTest, UpdateConfigAppliesTheMotorInversion) {
@@ -274,10 +274,10 @@ TEST_F(DriveTest, FirstSampleUsesFeedforwardOnly) {
   // there is no earlier sample to get a velocity from
   updateMotor(1000, -1000, 123456);
   EXPECT_TRUE(leftForwards());
-  EXPECT_NEAR(duty(k_channelLeft), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinLeft), 0.2f, k_dutyTol);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in3), LOW);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in4), HIGH);
-  EXPECT_NEAR(duty(k_channelRight), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinRight), 0.2f, k_dutyTol);
 }
 
 TEST_F(DriveTest, ZeroCommandBrakesThatWheel) {
@@ -301,8 +301,8 @@ TEST_F(DriveTest, VelocityAcrossTheMicrosWrap) {
   // velocity matches the command and only the feedforward remains. A dt that
   // didn't wrap would measure ~0 rad/s and add kp * 6.28 on top
   updateMotor(48, 48, 50000);
-  EXPECT_NEAR(duty(k_channelLeft), 0.1f * k_twoPi, 1e-3f);
-  EXPECT_NEAR(duty(k_channelRight), 0.1f * k_twoPi, 1e-3f);
+  EXPECT_NEAR(duty(k_pwmPinLeft), 0.1f * k_twoPi, 1e-3f);
+  EXPECT_NEAR(duty(k_pwmPinRight), 0.1f * k_twoPi, 1e-3f);
 }
 
 // ---- watchdog ----
@@ -344,7 +344,7 @@ TEST_F(DriveTest, WatchdogResumesOnAFreshCommand) {
   updateMotor(0, 0, 0);
   updateMotor(0, 0, 100000);
   updateMotor(0, 0, 200000); // integrators wound up, see above
-  ASSERT_NEAR(duty(k_channelLeft), 0.4f, k_dutyTol);
+  ASSERT_NEAR(duty(k_pwmPinLeft), 0.4f, k_dutyTol);
 
   arduino_stub::advanceMillis(300);
   updateMotor(0, 0, 300000);
@@ -355,9 +355,9 @@ TEST_F(DriveTest, WatchdogResumesOnAFreshCommand) {
   EXPECT_TRUE(leftForwards());
   EXPECT_TRUE(rightForwards());
   // restarts from the feedforward, the stop reset the integrators
-  EXPECT_NEAR(duty(k_channelLeft), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinLeft), 0.2f, k_dutyTol);
   updateMotor(0, 0, 500000);
-  EXPECT_NEAR(duty(k_channelLeft), 0.2f, k_dutyTol);
+  EXPECT_NEAR(duty(k_pwmPinLeft), 0.2f, k_dutyTol);
 }
 
 TEST_F(DriveTest, WatchdogAcrossTheMillisWrap) {

@@ -46,8 +46,8 @@ TEST_F(L298Test, ConstructorDoesNotTouchHardware) {
 
   EXPECT_EQ(arduino_stub::pinModeOf(k_ena), -1);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in1), -1);
-  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel1).setup);
-  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel2).setup);
+  EXPECT_FALSE(arduino_stub::ledcPin(k_ena).attached);
+  EXPECT_FALSE(arduino_stub::ledcPin(k_enb).attached);
 }
 
 TEST_F(L298Test, SetupMakesAllPinsOutputs) {
@@ -70,19 +70,19 @@ TEST_F(L298Test, SetupLeavesDirectionPinsLow) {
 TEST_F(L298Test, SetupConfiguresOnePwmChannelPerMotor) {
   driver_.setup();
 
-  const arduino_stub::LedcChannel c1 = arduino_stub::ledcChannel(k_channel1);
-  EXPECT_TRUE(c1.setup);
+  const arduino_stub::LedcPin c1 = arduino_stub::ledcPin(k_ena);
+  EXPECT_TRUE(c1.attached);
   EXPECT_EQ(c1.freq_hz, k_freq_hz);
   EXPECT_EQ(c1.resolution_bits, k_res);
-  EXPECT_EQ(c1.pin, k_ena);
+  EXPECT_EQ(c1.channel, k_channel1);
   // no duty until the first command
   EXPECT_FALSE(c1.written);
 
-  const arduino_stub::LedcChannel c2 = arduino_stub::ledcChannel(k_channel2);
-  EXPECT_TRUE(c2.setup);
+  const arduino_stub::LedcPin c2 = arduino_stub::ledcPin(k_enb);
+  EXPECT_TRUE(c2.attached);
   EXPECT_EQ(c2.freq_hz, k_freq_hz);
   EXPECT_EQ(c2.resolution_bits, k_res);
-  EXPECT_EQ(c2.pin, k_enb);
+  EXPECT_EQ(c2.channel, k_channel2);
   EXPECT_FALSE(c2.written);
 }
 
@@ -201,9 +201,9 @@ TEST_F(L298Test, FullDutyIsMaxOfResolution) {
   driver_.setup();
 
   EXPECT_EQ(driver_.setDuty1(1.0f), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, k_duty_max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, k_duty_max);
   EXPECT_EQ(driver_.setDuty2(1.0f), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel2).duty, k_duty_max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_enb).duty, k_duty_max);
 }
 
 TEST_F(L298Test, HalfDutyRoundsToNearest) {
@@ -211,7 +211,7 @@ TEST_F(L298Test, HalfDutyRoundsToNearest) {
 
   // 0.5 * 65535 = 32767.5, rounded up
   EXPECT_EQ(driver_.setDuty1(0.5f), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, 32768u);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, 32768u);
 }
 
 TEST_F(L298Test, ZeroDutyCoasts) {
@@ -222,8 +222,8 @@ TEST_F(L298Test, ZeroDutyCoasts) {
   ASSERT_EQ(driver_.setDuty1(0.7f), 0);
 
   EXPECT_EQ(driver_.setDuty1(0.0f), 0);
-  EXPECT_TRUE(arduino_stub::ledcChannel(k_channel1).written);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, 0u);
+  EXPECT_TRUE(arduino_stub::ledcPin(k_ena).written);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, 0u);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in1), HIGH);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in2), LOW);
 }
@@ -233,7 +233,7 @@ TEST_F(L298Test, NegativeZeroDutyIsAccepted) {
   driver_.setup();
 
   EXPECT_EQ(driver_.setDuty1(-0.0f), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, 0u);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, 0u);
 }
 
 TEST_F(L298Test, SmallestDutyStepIsReachable) {
@@ -241,18 +241,18 @@ TEST_F(L298Test, SmallestDutyStepIsReachable) {
 
   // one count above and the last count below full duty
   EXPECT_EQ(driver_.setDuty1(1.0f / k_duty_max), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, 1u);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, 1u);
   EXPECT_EQ(driver_.setDuty1(1.0f - 1.0f / k_duty_max), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, k_duty_max - 1u);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, k_duty_max - 1u);
 }
 
 TEST_F(L298Test, DutyIsPerMotor) {
   driver_.setup();
 
   ASSERT_EQ(driver_.setDuty1(1.0f), 0);
-  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel2).written);
+  EXPECT_FALSE(arduino_stub::ledcPin(k_enb).written);
   ASSERT_EQ(driver_.setDuty2(0.0f), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, k_duty_max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, k_duty_max);
 }
 
 TEST_F(L298Test, SetDutyDoesNotChangeDirection) {
@@ -274,15 +274,15 @@ TEST_P(L298OutOfRangeTest, RejectedAndLeavesOutputsUnchanged) {
   driver_.updateDir2(BACKWARDS);
   ASSERT_EQ(driver_.setDuty1(0.25f), 0);
   ASSERT_EQ(driver_.setDuty2(0.75f), 0);
-  const uint32_t duty1 = arduino_stub::ledcChannel(k_channel1).duty;
-  const uint32_t duty2 = arduino_stub::ledcChannel(k_channel2).duty;
+  const uint32_t duty1 = arduino_stub::ledcPin(k_ena).duty;
+  const uint32_t duty2 = arduino_stub::ledcPin(k_enb).duty;
 
   EXPECT_EQ(driver_.setDuty1(GetParam()), -1);
   EXPECT_EQ(driver_.setDuty2(GetParam()), -1);
 
   // the motors keep the last valid command
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, duty1);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel2).duty, duty2);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, duty1);
+  EXPECT_EQ(arduino_stub::ledcPin(k_enb).duty, duty2);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in1), HIGH);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in2), LOW);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in3), LOW);
@@ -303,8 +303,8 @@ TEST_F(L298Test, NanDutyIsRejected) {
 
   EXPECT_EQ(driver_.setDuty1(std::numeric_limits<float>::quiet_NaN()), -1);
   EXPECT_EQ(driver_.setDuty2(std::numeric_limits<float>::quiet_NaN()), -1);
-  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel1).written);
-  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel2).written);
+  EXPECT_FALSE(arduino_stub::ledcPin(k_ena).written);
+  EXPECT_FALSE(arduino_stub::ledcPin(k_enb).written);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -322,9 +322,9 @@ TEST_F(L298Test, BrakeShortsMotorAtFullDuty) {
 
   EXPECT_EQ(arduino_stub::digitalWritten(k_in1), LOW);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in2), LOW);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, k_duty_max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, k_duty_max);
   // motor 2 untouched
-  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel2).written);
+  EXPECT_FALSE(arduino_stub::ledcPin(k_enb).written);
 }
 
 TEST_F(L298Test, Brake2ShortsMotor2) {
@@ -335,8 +335,8 @@ TEST_F(L298Test, Brake2ShortsMotor2) {
 
   EXPECT_EQ(arduino_stub::digitalWritten(k_in3), LOW);
   EXPECT_EQ(arduino_stub::digitalWritten(k_in4), LOW);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel2).duty, k_duty_max);
-  EXPECT_FALSE(arduino_stub::ledcChannel(k_channel1).written);
+  EXPECT_EQ(arduino_stub::ledcPin(k_enb).duty, k_duty_max);
+  EXPECT_FALSE(arduino_stub::ledcPin(k_ena).written);
 }
 
 TEST_F(L298Test, BrakeStopsBothMotors) {
@@ -350,8 +350,8 @@ TEST_F(L298Test, BrakeStopsBothMotors) {
   for (uint8_t pin : {k_in1, k_in2, k_in3, k_in4}) {
     EXPECT_EQ(arduino_stub::digitalWritten(pin), LOW) << "pin " << int(pin);
   }
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, k_duty_max);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel2).duty, k_duty_max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, k_duty_max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_enb).duty, k_duty_max);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -370,15 +370,15 @@ TEST_P(L298ResolutionTest, FullDutyIsAllOnes) {
   L298N driver(k_ena, k_in1, k_in2, k_enb, k_in3, k_in4, res);
   driver.setup();
 
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).resolution_bits, res);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).resolution_bits, res);
   ASSERT_EQ(driver.setDuty1(1.0f), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, max);
   ASSERT_EQ(driver.setDuty1(0.0f), 0);
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel1).duty, 0u);
+  EXPECT_EQ(arduino_stub::ledcPin(k_ena).duty, 0u);
 
   // brake uses the same full scale
   driver.brake2();
-  EXPECT_EQ(arduino_stub::ledcChannel(k_channel2).duty, max);
+  EXPECT_EQ(arduino_stub::ledcPin(k_enb).duty, max);
 }
 
 // 1 bit is the smallest, 20 bits the largest the esp32 ledc supports, 16 is
