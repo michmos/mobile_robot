@@ -54,11 +54,10 @@ public:
     digitalWrite(IN3_Pin_, LOW);
     digitalWrite(IN4_Pin_, LOW);
 
-    // set up one pwm channel for each motor
-    ledcSetup(k_channel1_, k_pwm_freq_hz_, pwm_res_);
-    ledcAttachPin(ENA_Pin_, k_channel1_);
-    ledcSetup(k_channel2_, k_pwm_freq_hz_, pwm_res_);
-    ledcAttachPin(ENB_Pin_, k_channel2_);
+    // set up one pwm channel for each motor, the channel numbers are fixed so
+    // both motors always get the same ledc channels (and timers)
+    ledcAttachChannel(ENA_Pin_, k_pwm_freq_hz_, pwm_res_, k_channel1_);
+    ledcAttachChannel(ENB_Pin_, k_pwm_freq_hz_, pwm_res_, k_channel2_);
   }
 
   // electrically shorts a motor's terminals (IN1==IN2) while keeping the
@@ -69,12 +68,12 @@ public:
   void brake1() {
     digitalWrite(IN1_Pin_, LOW);
     digitalWrite(IN2_Pin_, LOW);
-    ledcWrite(k_channel1_, 1.0f * duty_max_ + 0.5f);
+    ledcWrite(ENA_Pin_, 1.0f * duty_max_ + 0.5f);
   }
   void brake2() {
     digitalWrite(IN3_Pin_, LOW);
     digitalWrite(IN4_Pin_, LOW);
-    ledcWrite(k_channel2_, 1.0f * duty_max_ + 0.5f);
+    ledcWrite(ENB_Pin_, 1.0f * duty_max_ + 0.5f);
   }
   void brake() {
     brake1();
@@ -95,14 +94,14 @@ public:
     if (!(duty_cycle >= 0.0f && duty_cycle <= 1.0f)) {
       return -1;
     }
-    ledcWrite(k_channel1_, duty_cycle * duty_max_ + 0.5f);
+    ledcWrite(ENA_Pin_, duty_cycle * duty_max_ + 0.5f);
     return 0;
   }
   int setDuty2(float duty_cycle) {
     if (!(duty_cycle >= 0.0f && duty_cycle <= 1.0f)) {
       return -1;
     }
-    ledcWrite(k_channel2_, duty_cycle * duty_max_ + 0.5f);
+    ledcWrite(ENB_Pin_, duty_cycle * duty_max_ + 0.5f);
     return 0;
   }
 
