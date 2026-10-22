@@ -88,7 +88,8 @@ jobs:
           if-no-files-found: ignore
 
   # compile check only, the firmware is flashed by hand (see AGENTS.md).
-  # arduino-cli, the pinned esp32:esp32@3.3.12 core and pyserial come with the image.
+  # arduino-cli, the pinned esp32:esp32@3.3.12 core, the pinned ESP32Encoder library
+  # and pyserial come with the image.
   firmware:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -99,9 +100,11 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
       # container jobs run with HOME=/github/home, so arduino-cli wouldn't find a
-      # core under /root/.arduino15. The image installs it here (also set as ENV
-      # in the Dockerfile, repeated so it's visible where it matters).
+      # core under /root/.arduino15 or libraries under /root/Arduino. The image
+      # installs them here (also set as ENV in the Dockerfile, repeated so it's
+      # visible where it matters).
       ARDUINO_DIRECTORIES_DATA: /opt/arduino15
+      ARDUINO_DIRECTORIES_USER: /opt/arduino
     steps:
       - uses: actions/checkout@v4
 

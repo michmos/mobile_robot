@@ -33,7 +33,10 @@
         <param name="ff_min_duty_left">0.0</param>
         <param name="ff_min_duty_right">0.0</param>
 
-        <param name="ticks_per_wheel_rev">480</param>
+        <!-- counted encoder edges per wheel revolution, 4x (full quadrature)
+             decoding: 4 x 491 measured by hand at 1x (11 PPR x 1:46.8
+             gearbox). Re-measure under power and update (#69) -->
+        <param name="ticks_per_wheel_rev">1964</param>
 
         <!-- report_rate_hz must not exceed control_rate_hz -->
         <param name="watchdog_timeout_ms">200</param>

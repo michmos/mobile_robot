@@ -187,6 +187,43 @@ TEST_F(ArduinoStubTest, ResetClearsAllState) {
   EXPECT_FALSE(arduino_stub::hasInterrupt(18));
 }
 
+TEST_F(ArduinoStubTest, EncoderFakeRecordsAttachAndCount) {
+  ESP32Encoder enc;
+  EXPECT_FALSE(arduino_stub::setEncoderCount(18, 5));
+  EXPECT_EQ(enc.getCount(), 0);
+
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
+  enc.attachHalfQuad(18, 19);
+  enc.setFilter(5000);
+
+  const auto unit = arduino_stub::encoderUnit(18);
+  EXPECT_EQ(unit.b_pin, 19);
+  EXPECT_EQ(unit.type, encType::half);
+  EXPECT_EQ(unit.pull, puType::up);
+  // clamped like the library
+  EXPECT_EQ(unit.filter, 1023);
+  EXPECT_TRUE(arduino_stub::setEncoderCount(18, -7));
+  EXPECT_EQ(enc.getCount(), -7);
+}
+
+TEST_F(ArduinoStubTest, EncoderAttachSetsTheLibraryDefaultFilter) {
+  ESP32Encoder enc;
+  enc.attachFullQuad(18, 19);
+  EXPECT_EQ(arduino_stub::encoderUnit(18).filter, 250);
+}
+
+TEST_F(ArduinoStubTest, ResetClearsTheEncoderFake) {
+  ESP32Encoder enc;
+  ESP32Encoder::useInternalWeakPullResistors = puType::up;
+  enc.attachFullQuad(18, 19);
+
+  arduino_stub::reset();
+
+  EXPECT_FALSE(arduino_stub::encoderAttached(18));
+  // the library's default
+  EXPECT_EQ(ESP32Encoder::useInternalWeakPullResistors, puType::down);
+}
+
 TEST_F(ArduinoStubTest, CriticalSectionsCompileAsNoOps) {
   portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
   portENTER_CRITICAL(&mux);
