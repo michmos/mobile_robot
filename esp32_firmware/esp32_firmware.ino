@@ -35,9 +35,6 @@
 // constants
 const uint8_t k_pwm_res = 16;
 
-// locks
-portMUX_TYPE g_encoder_mux = portMUX_INITIALIZER_UNLOCKED;
-
 SerialChannel g_sc;
 // motor 1 of the driver is the left wheel, motor 2 the right one (Drive.hpp)
 L298N g_motorDriver(LEFT_EN_PIN, LEFT_IN1_PIN, LEFT_IN2_PIN, RIGHT_EN_PIN,
@@ -52,16 +49,22 @@ Drive g_drive(g_sc, g_motorDriver, g_encoderLeft, g_encoderRight, g_motorControl
 // Sensor data
 //////////////////////////////////////////////////////////////////////////////////
 
-// use portENTER_CRITICAL to disable interrupts ensuring all sample data to be taken
-// around the same time
+// both counts and the timestamp are taken back to back, with the timestamp in
+// between so it is at most one read away from either count. There is no
+// critical section around them: ESP32Encoder::getCount() already takes the
+// library's spinlock and, inside it, the PCNT driver's
+// (pcnt_unit_get_count()). Another spinlock around both reads would nest them
+// and keep interrupts off across two driver calls running from flash, while
+// ESP-IDF wants critical sections short and free of driver calls. The PCNT
+// hardware keeps counting on its own, so a preemption in between loses no
+// ticks, it only moves the samples apart; a read takes a few us, at full
+// speed an edge comes every ~100 us
 EncoderSample
 sampleEncoders() {
   EncoderSample s;
-  portENTER_CRITICAL(&g_encoder_mux);
   s.left_ticks = g_encoderLeft.get_tick_count();
-  s.right_ticks = g_encoderRight.get_tick_count();
   s.us = micros();
-  portEXIT_CRITICAL(&g_encoder_mux);
+  s.right_ticks = g_encoderRight.get_tick_count();
   return s;
 }
 
