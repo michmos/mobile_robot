@@ -97,9 +97,22 @@ void awaitConfig() {
 // Main
 //////////////////////////////////////////////////////////////////////////////////
 
+// without pwm the motors can't move, so the firmware stops here instead of
+// asking for a configuration. The direction pins stay LOW, neither motor is
+// driven. The log line is repeated because the pi may open the port later.
+// The pi logs it, and its handshake times out because no config is ACKed
+void haltOnMotorDriverFailure() {
+  while (true) {
+    g_sc.writeln(msgs::Log("Motor pwm setup (ledcAttach) failed, halted"));
+    delay(1000);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
-  g_motorDriver.setup();
+  if (!g_motorDriver.setup()) {
+    haltOnMotorDriverFailure();
+  }
   g_encoderLeft.setup();
   g_encoderRight.setup();
   g_motorDriver.brake();

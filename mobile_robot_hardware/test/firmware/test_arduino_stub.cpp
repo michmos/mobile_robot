@@ -100,19 +100,46 @@ TEST_F(ArduinoStubTest, GpioRecordsLastValuePerPin) {
   EXPECT_EQ(digitalRead(5), HIGH);
 }
 
-TEST_F(ArduinoStubTest, LedcRecordsChannelState) {
-  EXPECT_FALSE(arduino_stub::ledcChannel(1).setup);
+TEST_F(ArduinoStubTest, LedcRecordsPinState) {
+  EXPECT_FALSE(arduino_stub::ledcPin(15).attached);
 
-  ledcSetup(1, 1000, 16);
-  ledcAttachPin(15, 1);
-  ledcWrite(1, 42);
-  const arduino_stub::LedcChannel c = arduino_stub::ledcChannel(1);
-  EXPECT_TRUE(c.setup);
-  EXPECT_EQ(c.freq_hz, 1000u);
-  EXPECT_EQ(c.resolution_bits, 16);
-  EXPECT_EQ(c.pin, 15);
-  EXPECT_TRUE(c.written);
-  EXPECT_EQ(c.duty, 42u);
+  EXPECT_TRUE(ledcAttachChannel(15, 1000, 16, 1));
+  EXPECT_TRUE(ledcWrite(15, 42));
+  const arduino_stub::LedcPin p = arduino_stub::ledcPin(15);
+  EXPECT_TRUE(p.attached);
+  EXPECT_EQ(p.freq_hz, 1000u);
+  EXPECT_EQ(p.resolution_bits, 16);
+  EXPECT_EQ(p.channel, 1);
+  EXPECT_TRUE(p.written);
+  EXPECT_EQ(p.duty, 42u);
+}
+
+TEST_F(ArduinoStubTest, LedcAttachPicksFreeChannel) {
+  ASSERT_TRUE(ledcAttachChannel(15, 1000, 16, 0));
+  EXPECT_TRUE(ledcAttach(5, 5000, 8));
+
+  const arduino_stub::LedcPin p = arduino_stub::ledcPin(5);
+  EXPECT_TRUE(p.attached);
+  EXPECT_EQ(p.freq_hz, 5000u);
+  EXPECT_EQ(p.resolution_bits, 8);
+  EXPECT_EQ(p.channel, 1);
+}
+
+TEST_F(ArduinoStubTest, LedcAttachCanBeMadeToFail) {
+  arduino_stub::failLedcAttach(15);
+
+  EXPECT_FALSE(ledcAttach(15, 1000, 16));
+  EXPECT_FALSE(ledcAttachChannel(15, 1000, 16, 0));
+  EXPECT_FALSE(arduino_stub::ledcPin(15).attached);
+  EXPECT_FALSE(ledcWrite(15, 42));
+  // other pins are unaffected
+  EXPECT_TRUE(ledcAttach(5, 1000, 16));
+}
+
+TEST_F(ArduinoStubTest, LedcWriteToUnattachedPinFails) {
+  // the 3.x core rejects writes to a pin without ledc attached
+  EXPECT_FALSE(ledcWrite(15, 42));
+  EXPECT_FALSE(arduino_stub::ledcPin(15).written);
 }
 
 TEST_F(ArduinoStubTest, InterruptsCanBeFired) {
@@ -142,7 +169,8 @@ TEST_F(ArduinoStubTest, ResetClearsAllState) {
   pinMode(2, OUTPUT);
   digitalWrite(2, HIGH);
   arduino_stub::setDigitalRead(3, HIGH);
-  ledcSetup(1, 1000, 8);
+  ledcAttachChannel(15, 1000, 8, 1);
+  arduino_stub::failLedcAttach(5);
   attachInterrupt(18, countIsr, RISING);
 
   arduino_stub::reset();
@@ -154,7 +182,8 @@ TEST_F(ArduinoStubTest, ResetClearsAllState) {
   EXPECT_EQ(arduino_stub::pinModeOf(2), -1);
   EXPECT_EQ(arduino_stub::digitalWritten(2), -1);
   EXPECT_EQ(digitalRead(3), LOW);
-  EXPECT_FALSE(arduino_stub::ledcChannel(1).setup);
+  EXPECT_FALSE(arduino_stub::ledcPin(15).attached);
+  EXPECT_TRUE(ledcAttach(5, 1000, 8));
   EXPECT_FALSE(arduino_stub::hasInterrupt(18));
 }
 

@@ -10,8 +10,6 @@ enum e_direction { BACKWARDS = -1, FORWARDS = 1 };
 class L298N {
 private:
   static const uint32_t k_pwm_freq_hz_ = 1000;
-  static const uint8_t k_channel1_ = 1;
-  static const uint8_t k_channel2_ = 2;
 
   // ESP32 pins
   uint8_t ENA_Pin_;
@@ -37,7 +35,10 @@ public:
   L298N(const L298N &toCopy) = delete;
   L298N &operator=(const L298N &toAssign) = delete;
 
-  void setup() {
+  // @return: false if the pwm of either motor could not be set up, its
+  // ledcWrite() calls then fail and the motor never moves. The direction pins
+  // stay LOW in that case, so neither motor is driven
+  bool setup() {
     // motor setup
     pinMode(ENA_Pin_, OUTPUT);
     pinMode(IN1_Pin_, OUTPUT);
@@ -54,11 +55,10 @@ public:
     digitalWrite(IN3_Pin_, LOW);
     digitalWrite(IN4_Pin_, LOW);
 
-    // set up one pwm channel for each motor
-    ledcSetup(k_channel1_, k_pwm_freq_hz_, pwm_res_);
-    ledcAttachPin(ENA_Pin_, k_channel1_);
-    ledcSetup(k_channel2_, k_pwm_freq_hz_, pwm_res_);
-    ledcAttachPin(ENB_Pin_, k_channel2_);
+    // set up pwm for each motor, the core picks a free ledc channel per pin
+    const bool attached1 = ledcAttach(ENA_Pin_, k_pwm_freq_hz_, pwm_res_);
+    const bool attached2 = ledcAttach(ENB_Pin_, k_pwm_freq_hz_, pwm_res_);
+    return attached1 && attached2;
   }
 
   // electrically shorts a motor's terminals (IN1==IN2) while keeping the
@@ -69,12 +69,12 @@ public:
   void brake1() {
     digitalWrite(IN1_Pin_, LOW);
     digitalWrite(IN2_Pin_, LOW);
-    ledcWrite(k_channel1_, 1.0f * duty_max_ + 0.5f);
+    ledcWrite(ENA_Pin_, 1.0f * duty_max_ + 0.5f);
   }
   void brake2() {
     digitalWrite(IN3_Pin_, LOW);
     digitalWrite(IN4_Pin_, LOW);
-    ledcWrite(k_channel2_, 1.0f * duty_max_ + 0.5f);
+    ledcWrite(ENB_Pin_, 1.0f * duty_max_ + 0.5f);
   }
   void brake() {
     brake1();
@@ -95,14 +95,14 @@ public:
     if (!(duty_cycle >= 0.0f && duty_cycle <= 1.0f)) {
       return -1;
     }
-    ledcWrite(k_channel1_, duty_cycle * duty_max_ + 0.5f);
+    ledcWrite(ENA_Pin_, duty_cycle * duty_max_ + 0.5f);
     return 0;
   }
   int setDuty2(float duty_cycle) {
     if (!(duty_cycle >= 0.0f && duty_cycle <= 1.0f)) {
       return -1;
     }
-    ledcWrite(k_channel2_, duty_cycle * duty_max_ + 0.5f);
+    ledcWrite(ENB_Pin_, duty_cycle * duty_max_ + 0.5f);
     return 0;
   }
 

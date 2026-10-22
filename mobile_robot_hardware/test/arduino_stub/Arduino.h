@@ -1,7 +1,7 @@
 #ifndef ARDUINO_STUB_H
 #define ARDUINO_STUB_H
 
-// host stand-in for the Arduino core (esp32 core 2.0.x API), so the hardware
+// host stand-in for the Arduino core (esp32 core 3.x API), so the hardware
 // independent firmware code in esp32_firmware/inc/ compiles and runs in gtest.
 // Everything the firmware touches is faked here and can be driven and
 // inspected from the test through the arduino_stub namespace. This is the
@@ -14,6 +14,7 @@
 #include <cstring>
 #include <deque>
 #include <map>
+#include <set>
 #include <string>
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -148,13 +149,13 @@ public:
   }
 };
 
-// state of one ledc (pwm) channel, last values passed to the ledc functions
-struct LedcChannel {
+// ledc (pwm) state of one pin, last values passed to the ledc functions
+struct LedcPin {
   uint32_t freq_hz = 0;
   uint8_t resolution_bits = 0;
   uint32_t duty = 0;
-  int pin = -1; // last pin attached to this channel, -1 if none
-  bool setup = false;
+  int channel = -1; // ledc channel the pin is attached to, -1 if none
+  bool attached = false;
   bool written = false;
 };
 
@@ -175,7 +176,8 @@ struct State {
   std::map<uint8_t, uint8_t> pinModes;      // last pinMode() per pin
   std::map<uint8_t, uint8_t> digitalWrites; // last digitalWrite() per pin
   std::map<uint8_t, int> digitalReads;      // what digitalRead() returns
-  std::map<uint8_t, LedcChannel> ledc;      // per channel
+  std::map<uint8_t, LedcPin> ledc;          // per pin
+  std::set<uint8_t> ledcAttachFails;        // pins whose ledc attach fails
   std::map<uint8_t, Interrupt> interrupts;  // per pin
 };
 
@@ -209,10 +211,23 @@ inline int digitalWritten(uint8_t pin) {
 }
 
 // ---- ledc ----
-// @return: state of a pwm channel, default constructed if never touched
-inline LedcChannel ledcChannel(uint8_t channel) {
-  auto it = state.ledc.find(channel);
-  return it == state.ledc.end() ? LedcChannel() : it->second;
+// @return: pwm state of a pin, default constructed if never attached
+inline LedcPin ledcPin(uint8_t pin) {
+  auto it = state.ledc.find(pin);
+  return it == state.ledc.end() ? LedcPin() : it->second;
+}
+// makes every later ledcAttach()/ledcAttachChannel() on pin fail like the
+// real core does on an invalid pin, frequency or resolution or when no
+// channel is free: it returns false and leaves the pin unattached
+inline void failLedcAttach(uint8_t pin) { state.ledcAttachFails.insert(pin); }
+// @return: true if another pin than pin is attached to channel
+inline bool ledcChannelInUse(uint8_t channel, uint8_t pin) {
+  for (const auto &p : state.ledc) {
+    if (p.first != pin && p.second.channel == channel) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // ---- interrupts ----
@@ -246,7 +261,7 @@ inline arduino_stub::FakeSerial Serial;
 
 namespace arduino_stub {
 // clears all state of the fake core: clock back to 0, serial queues, pin,
-// pwm and interrupt records
+// pwm (including failLedcAttach()) and interrupt records
 inline void reset() {
   state = State();
   Serial.reset();
@@ -280,21 +295,38 @@ inline int digitalRead(uint8_t pin) {
   return it == arduino_stub::state.digitalReads.end() ? LOW : it->second;
 }
 
-// esp32 core 2.0.x ledc api (removed in 3.x)
-inline uint32_t ledcSetup(uint8_t channel, uint32_t freq, uint8_t resolution) {
-  arduino_stub::LedcChannel &c = arduino_stub::state.ledc[channel];
-  c.freq_hz = freq;
-  c.resolution_bits = resolution;
-  c.setup = true;
-  return freq;
+// esp32 core 3.x ledc api: pins are attached to a channel with frequency and
+// resolution, the duty is written per pin
+inline bool ledcAttachChannel(uint8_t pin, uint32_t freq, uint8_t resolution,
+                              uint8_t channel) {
+  if (arduino_stub::state.ledcAttachFails.count(pin) != 0) {
+    return false;
+  }
+  arduino_stub::LedcPin p;
+  p.freq_hz = freq;
+  p.resolution_bits = resolution;
+  p.channel = channel;
+  p.attached = true;
+  arduino_stub::state.ledc[pin] = p;
+  return true;
 }
-inline void ledcAttachPin(uint8_t pin, uint8_t channel) {
-  arduino_stub::state.ledc[channel].pin = pin;
+// attaches pin to the lowest channel no other pin uses
+inline bool ledcAttach(uint8_t pin, uint32_t freq, uint8_t resolution) {
+  uint8_t channel = 0;
+  while (arduino_stub::ledcChannelInUse(channel, pin)) {
+    ++channel;
+  }
+  return ledcAttachChannel(pin, freq, resolution, channel);
 }
-inline void ledcWrite(uint8_t channel, uint32_t duty) {
-  arduino_stub::LedcChannel &c = arduino_stub::state.ledc[channel];
-  c.duty = duty;
-  c.written = true;
+// like the real core, a write to a pin without ledc attached fails
+inline bool ledcWrite(uint8_t pin, uint32_t duty) {
+  auto it = arduino_stub::state.ledc.find(pin);
+  if (it == arduino_stub::state.ledc.end() || !it->second.attached) {
+    return false;
+  }
+  it->second.duty = duty;
+  it->second.written = true;
+  return true;
 }
 
 inline void attachInterrupt(uint8_t pin, void (*isr)(), int mode) {
