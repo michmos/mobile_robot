@@ -66,7 +66,7 @@ TEST_F(L298Test, SetupLeavesDirectionPinsLow) {
 }
 
 TEST_F(L298Test, SetupConfiguresOnePwmChannelPerMotor) {
-  driver_.setup();
+  EXPECT_TRUE(driver_.setup());
 
   const arduino_stub::LedcPin c1 = arduino_stub::ledcPin(k_ena);
   EXPECT_TRUE(c1.attached);
@@ -80,7 +80,28 @@ TEST_F(L298Test, SetupConfiguresOnePwmChannelPerMotor) {
   EXPECT_EQ(c2.freq_hz, k_freq_hz);
   EXPECT_EQ(c2.resolution_bits, k_res);
   EXPECT_FALSE(c2.written);
+
+  // a shared channel would drive both motors with the same duty
+  EXPECT_NE(c1.channel, c2.channel);
 }
+
+// a failed attach must be reported, otherwise the motors silently never move
+class L298AttachFailTest : public L298Test,
+                           public ::testing::WithParamInterface<uint8_t> {};
+
+TEST_P(L298AttachFailTest, SetupReportsFailure) {
+  arduino_stub::failLedcAttach(GetParam());
+
+  EXPECT_FALSE(driver_.setup());
+  EXPECT_FALSE(arduino_stub::ledcPin(GetParam()).attached);
+  // no direction driven, neither motor can turn
+  for (uint8_t pin : {k_in1, k_in2, k_in3, k_in4}) {
+    EXPECT_EQ(arduino_stub::digitalWritten(pin), LOW) << "pin " << int(pin);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(EnablePins, L298AttachFailTest,
+                         ::testing::Values(k_ena, k_enb));
 
 ///////////////////////////////////////////////////////////////////////////////
 // direction

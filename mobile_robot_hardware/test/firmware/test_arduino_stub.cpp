@@ -125,6 +125,17 @@ TEST_F(ArduinoStubTest, LedcAttachPicksFreeChannel) {
   EXPECT_EQ(p.channel, 1);
 }
 
+TEST_F(ArduinoStubTest, LedcAttachCanBeMadeToFail) {
+  arduino_stub::failLedcAttach(15);
+
+  EXPECT_FALSE(ledcAttach(15, 1000, 16));
+  EXPECT_FALSE(ledcAttachChannel(15, 1000, 16, 0));
+  EXPECT_FALSE(arduino_stub::ledcPin(15).attached);
+  EXPECT_FALSE(ledcWrite(15, 42));
+  // other pins are unaffected
+  EXPECT_TRUE(ledcAttach(5, 1000, 16));
+}
+
 TEST_F(ArduinoStubTest, LedcWriteToUnattachedPinFails) {
   // the 3.x core rejects writes to a pin without ledc attached
   EXPECT_FALSE(ledcWrite(15, 42));
@@ -159,6 +170,7 @@ TEST_F(ArduinoStubTest, ResetClearsAllState) {
   digitalWrite(2, HIGH);
   arduino_stub::setDigitalRead(3, HIGH);
   ledcAttachChannel(15, 1000, 8, 1);
+  arduino_stub::failLedcAttach(5);
   attachInterrupt(18, countIsr, RISING);
 
   arduino_stub::reset();
@@ -171,6 +183,7 @@ TEST_F(ArduinoStubTest, ResetClearsAllState) {
   EXPECT_EQ(arduino_stub::digitalWritten(2), -1);
   EXPECT_EQ(digitalRead(3), LOW);
   EXPECT_FALSE(arduino_stub::ledcPin(15).attached);
+  EXPECT_TRUE(ledcAttach(5, 1000, 8));
   EXPECT_FALSE(arduino_stub::hasInterrupt(18));
 }
 

@@ -14,6 +14,7 @@
 #include <cstring>
 #include <deque>
 #include <map>
+#include <set>
 #include <string>
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -176,6 +177,7 @@ struct State {
   std::map<uint8_t, uint8_t> digitalWrites; // last digitalWrite() per pin
   std::map<uint8_t, int> digitalReads;      // what digitalRead() returns
   std::map<uint8_t, LedcPin> ledc;          // per pin
+  std::set<uint8_t> ledcAttachFails;        // pins whose ledc attach fails
   std::map<uint8_t, Interrupt> interrupts;  // per pin
 };
 
@@ -214,6 +216,10 @@ inline LedcPin ledcPin(uint8_t pin) {
   auto it = state.ledc.find(pin);
   return it == state.ledc.end() ? LedcPin() : it->second;
 }
+// makes every later ledcAttach()/ledcAttachChannel() on pin fail like the
+// real core does on an invalid pin, frequency or resolution or when no
+// channel is free: it returns false and leaves the pin unattached
+inline void failLedcAttach(uint8_t pin) { state.ledcAttachFails.insert(pin); }
 // @return: true if another pin than pin is attached to channel
 inline bool ledcChannelInUse(uint8_t channel, uint8_t pin) {
   for (const auto &p : state.ledc) {
@@ -255,7 +261,7 @@ inline arduino_stub::FakeSerial Serial;
 
 namespace arduino_stub {
 // clears all state of the fake core: clock back to 0, serial queues, pin,
-// pwm and interrupt records
+// pwm (including failLedcAttach()) and interrupt records
 inline void reset() {
   state = State();
   Serial.reset();
@@ -293,6 +299,9 @@ inline int digitalRead(uint8_t pin) {
 // resolution, the duty is written per pin
 inline bool ledcAttachChannel(uint8_t pin, uint32_t freq, uint8_t resolution,
                               uint8_t channel) {
+  if (arduino_stub::state.ledcAttachFails.count(pin) != 0) {
+    return false;
+  }
   arduino_stub::LedcPin p;
   p.freq_hz = freq;
   p.resolution_bits = resolution;
