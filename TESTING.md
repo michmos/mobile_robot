@@ -59,6 +59,7 @@ Prefer the lowest level that can catch the bug. Most tests should be unit tests.
 | ros2_control hardware for launch/integration tests | `mock_components/GenericSystem`, selected with the `use_mock_hardware` xacro/launch argument |
 | Controller's hardware | Hand-made `hardware_interface::CommandInterface` / `StateInterface` objects (the pattern used by ros2_controllers' `diff_drive_controller` tests) |
 | Arduino core (`millis`, `micros`, `Serial`, GPIO, LEDC, interrupts) | `mobile_robot_hardware/test/arduino_stub/Arduino.h`: a controllable clock, a fake `Serial` with an input queue and output capture, and recorders for GPIO/LEDC calls (esp32 core 3.x API: per-pin `ledcAttach`/`ledcAttachChannel`/`ledcWrite`). Extend this stub instead of creating a second one. |
+| `ESP32Encoder` library (PCNT encoders) | `mobile_robot_hardware/test/arduino_stub/ESP32Encoder.h`: records how each encoder was attached (pins, quadrature mode, pull resistors, filter) and returns a count the test sets with `arduino_stub::setEncoderCount()`; cleared by `arduino_stub::reset()`. |
 | Lidar, joystick, foxglove | Not started in tests. The launch file has arguments to disable them. |
 
 ## 5. Changing production code for testability
