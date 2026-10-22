@@ -88,7 +88,7 @@ jobs:
           if-no-files-found: ignore
 
   # compile check only, the firmware is flashed by hand (see AGENTS.md).
-  # arduino-cli, the esp32:esp32@2.0.17 core and pyserial come with the image.
+  # arduino-cli, the pinned esp32:esp32@3.3.12 core and pyserial come with the image.
   firmware:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
