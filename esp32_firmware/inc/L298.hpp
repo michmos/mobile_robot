@@ -35,7 +35,10 @@ public:
   L298N(const L298N &toCopy) = delete;
   L298N &operator=(const L298N &toAssign) = delete;
 
-  void setup() {
+  // @return: false if the pwm of either motor could not be set up, its
+  // ledcWrite() calls then fail and the motor never moves. The direction pins
+  // stay LOW in that case, so neither motor is driven
+  bool setup() {
     // motor setup
     pinMode(ENA_Pin_, OUTPUT);
     pinMode(IN1_Pin_, OUTPUT);
@@ -53,8 +56,9 @@ public:
     digitalWrite(IN4_Pin_, LOW);
 
     // set up pwm for each motor, the core picks a free ledc channel per pin
-    ledcAttach(ENA_Pin_, k_pwm_freq_hz_, pwm_res_);
-    ledcAttach(ENB_Pin_, k_pwm_freq_hz_, pwm_res_);
+    const bool attached1 = ledcAttach(ENA_Pin_, k_pwm_freq_hz_, pwm_res_);
+    const bool attached2 = ledcAttach(ENB_Pin_, k_pwm_freq_hz_, pwm_res_);
+    return attached1 && attached2;
   }
 
   // electrically shorts a motor's terminals (IN1==IN2) while keeping the
