@@ -69,5 +69,8 @@ RUN curl -fsSL "https://raw.githubusercontent.com/arduino/arduino-cli/${ARDUINO_
       | BINDIR=/usr/local/bin sh -s "${ARDUINO_CLI_VERSION}" \
  && arduino-cli core update-index \
  && arduino-cli core install "esp32:esp32@${ESP32_CORE_VERSION}" \
+ && rm -rf "${ARDUINO_DIRECTORIES_DATA}/staging" \
  && pip3 install --break-system-packages pyserial
+# ^ staging holds the downloaded core and tool archives, they are unpacked by
+#   the install and not needed afterwards.
 # ^ pyserial is needed by esptool_py's post-build size-check step, not for flashing.
