@@ -50,7 +50,7 @@ inline Params xacroDefaults() {
       {"ff_slope_right", "0.1"},
       {"ff_min_duty_left", "0.0"},
       {"ff_min_duty_right", "0.0"},
-      {"ticks_per_wheel_rev", "480"},
+      {"ticks_per_wheel_rev", "1964"},
       {"watchdog_timeout_ms", "200"},
       {"control_rate_hz", "200"},
       {"report_rate_hz", "50"},
