@@ -7,7 +7,9 @@
 // inspected from the test through the arduino_stub namespace. This is the
 // single shared stub for all firmware tests, extend it instead of adding a
 // second one. Call arduino_stub::reset() at the start of every test (from the
-// fixture's SetUp()) so no state leaks between tests
+// fixture's SetUp()) so no state leaks between tests. Fakes of the libraries
+// the firmware uses live next to this file (ESP32Encoder.h) and are reset by
+// the same call
 
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +18,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 ///////////////////////////////////////////////////////////////////////////////
 // constants and esp32 specific keywords
@@ -260,11 +263,22 @@ inline bool fireInterrupt(uint8_t pin) {
 inline arduino_stub::FakeSerial Serial;
 
 namespace arduino_stub {
+// reset functions of the library fakes next to this file, each registers its
+// own when it is included
+inline std::vector<void (*)()> &resetHooks() {
+  static std::vector<void (*)()> hooks;
+  return hooks;
+}
+
 // clears all state of the fake core: clock back to 0, serial queues, pin,
-// pwm (including failLedcAttach()) and interrupt records
+// pwm (including failLedcAttach()) and interrupt records, and the state of
+// the library fakes
 inline void reset() {
   state = State();
   Serial.reset();
+  for (auto hook : resetHooks()) {
+    hook();
+  }
 }
 } // namespace arduino_stub
 
