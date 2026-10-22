@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Entry point of the wheel_tuning script, see mobile_robot.wheel_tuning."""
+
+import sys
+
+from mobile_robot.wheel_tuning import main
+
+sys.exit(main())

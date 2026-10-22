@@ -13,10 +13,12 @@ find_package(ament_cmake_python REQUIRED)
 
 ament_python_install_package(${PROJECT_NAME})
 
-# exits when a hardware component leaves 'active', see
-# mobile_robot/hardware_watchdog.py
+# hardware_watchdog exits when a hardware component leaves 'active', see
+# mobile_robot/hardware_watchdog.py. wheel_tuning runs feedforward / PI
+# tuning, see mobile_robot/wheel_tuning.py
 install(PROGRAMS
   scripts/hardware_watchdog
+  scripts/wheel_tuning
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -58,6 +60,9 @@ if(BUILD_TESTING)
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
   ament_add_pytest_test(test_hardware_watchdog test/test_hardware_watchdog.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  ament_add_pytest_test(test_tuning_analysis test/test_tuning_analysis.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
   ament_add_pytest_test(test_robot_description test/test_robot_description.py)
