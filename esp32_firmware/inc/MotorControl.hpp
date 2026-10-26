@@ -1,0 +1,121 @@
+#ifndef MOTOR_CONTROL_HPP
+#define MOTOR_CONTROL_HPP
+
+#include <Arduino.h>
+#include <algorithm>
+#include <cmath>
+
+class MotorControl {
+private:
+  // configs
+  float min_duty_left_ = 0.0f;
+  float min_duty_right_ = 0.0f;
+  float slope_left_ = 0.0f;
+  float slope_right_ = 0.0f;
+  float kp_ = 0.0f;
+  float ki_ = 0.0f;
+
+  float integral_term_left_ = 0.0f;
+  float integral_term_right_ = 0.0f;
+  float integral_limit_ = 0.0f;
+
+  float clamp_(float val, float min_val = -1, float max_val = 1) {
+    return std::max(min_val, std::min(max_val, val));
+  }
+
+  float feedforward_(float cmdVel, float slope, float min_duty) {
+    // a command that isn't a finite number stops the wheel. clamp_() would
+    // turn NaN into full duty, every comparison with it is false
+    if (cmdVel == 0.0f || !std::isfinite(cmdVel)) {
+      return 0.0f;
+    }
+    return clamp_(copysignf(min_duty + slope * fabsf(cmdVel), cmdVel));
+  }
+
+  // ff + pi compute duty cycle
+  float computeDuty_(float cmdVel, float currVel, float dt_s, bool left) {
+    float *integral_term =
+        (left) ? &integral_term_left_ : &integral_term_right_;
+
+    // a stop command should hold still, not servo to exactly zero off a
+    // velocity reading that's mostly quantization noise at low tick counts -
+    // fighting that noise is what made the wheel judder/reverse near zero
+    // same for a command or a measured velocity that isn't a finite number
+    // (e.g. dt == 0 in the velocity estimate): stop instead of saturating,
+    // and don't let it into the integral
+    if (cmdVel == 0.0f || !std::isfinite(cmdVel) || !std::isfinite(currVel)) {
+      *integral_term = 0.0f;
+      return 0.0f;
+    }
+
+    float errTerm = cmdVel - currVel;
+
+    // chose parameters for left or right wheel
+    float slope = (left) ? slope_left_ : slope_right_;
+    float min_duty = (left) ? min_duty_left_ : min_duty_right_;
+
+    // ff + pi
+    float duty =
+        feedforward_(cmdVel, slope, min_duty) + kp_ * errTerm + *integral_term;
+
+    // avoid windup by conditionally integrating only when not saturated
+    bool saturated =
+        (duty > 1.0f && errTerm > 0.0f) || (duty < -1.0f && errTerm < 0.0f);
+    if (!saturated) {
+      *integral_term += ki_ * errTerm * dt_s;
+      *integral_term =
+          clamp_(*integral_term, -integral_limit_, integral_limit_);
+    }
+    return clamp_(duty);
+  }
+
+public:
+  // setup the controller with new parameters and zeros integrals
+  // all values normalized
+  void configure(float min_duty_left, float min_duty_right, float slope_left,
+                 float slope_right, float kp, float ki, float integral_limit) {
+    min_duty_left_ = min_duty_left;
+    min_duty_right_ = min_duty_right;
+    slope_left_ = slope_left;
+    slope_right_ = slope_right;
+    kp_ = kp;
+    ki_ = ki;
+    integral_limit_ = integral_limit;
+
+    // integrals should be reset when gains are changed to avoid jumps in duty
+    // cycle
+    reset();
+  };
+
+  // resets controller to configured state
+  void reset() {
+    integral_term_left_ = 0.0f;
+    integral_term_right_ = 0.0f;
+  }
+
+  // get normalized duty cycle through ff and pi control
+  // @return: normalized duty cycle to apply to the left wheel in [-1;1]
+  float computeDutyLeft(float cmdVel, float currVel, float dt_s) {
+    return computeDuty_(cmdVel, currVel, dt_s, true);
+  }
+
+  // get normalized duty cycle through ff and pi control
+  // @return: normalized duty cycle to apply to the Right wheel in [-1;1]
+  float computeDutyRight(float cmdVel, float currVel, float dt_s) {
+    return computeDuty_(cmdVel, currVel, dt_s, false);
+  }
+
+  // get normalized duty cycle through ff control only
+  // @return: normalized duty cycle to apply to the left wheel in [-1;1]
+  float feedforwardLeft(float cmdVel) {
+    return feedforward_(cmdVel, slope_left_, min_duty_left_);
+  }
+
+  // get normalized duty cycle through ff control only
+  // @return: normalized duty cycle to apply to the right wheel in [-1;1]
+  float feedforwardRight(float cmdVel) {
+    return feedforward_(cmdVel, slope_right_, min_duty_right_);
+  }
+};
+
+#endif

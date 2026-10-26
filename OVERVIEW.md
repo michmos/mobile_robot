@@ -1,0 +1,51 @@
+
+# Overview
+[![CI](https://github.com/michmos/mobile_robot/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/michmos/mobile_robot/actions/workflows/ci.yml?query=branch%3Adev)
+
+A differential-drive mobile robot split across two compute targets, connected over a line-based serial protocol (see "Serial protocol" below).
+
+This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is not itself a ROS package (no top-level `package.xml`).
+
+- **`esp32_firmware/`** — Arduino/micro-ROS firmware for the ESP32 (encoders, L298N motor driver). No `package.xml`, so colcon ignores it; built/flashed separately via Arduino IDE/arduino-cli.
+  The `.ino` is thin glue; the logic lives in host-testable headers under `esp32_firmware/inc/` (`Drive.hpp`: config update, command watchdog, FF + PI; `Scheduler.hpp`: periodic `due()`; `Velocity.hpp`), tested in `mobile_robot_hardware/test/firmware/`.
+- **`mobile_robot_hardware/`** — `ros2_control` hardware interface plugin; owns the serial link to the ESP32.
+- **`mobile_robot_controller/`** — `ros2_control` controller plugin (diff drive). The kinematics/odometry math lives in free functions in `include/mobile_robot_controller/kinematics.hpp`. Subscribes to the global `/cmd_vel` (`TwistStamped`, written by twist_mux), publishes `/odom` and the `odom` -> `base_link` transform on `/tf`.
+- **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description, the `hardware_watchdog` node.
+- **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`. `start_robot.sh` clones/updates the `dev` branch, rebuilds on a new commit and launches; offline or on a failed update/build it launches the last installed build (#59).
+- **`lint/`** — linter setup shared by the three packages' `colcon test` (`lint.cmake`): C++ style via `ament_clang_format` with the repo's `.clang-format` instead of uncrustify, xmllint validating `package.xml` against a local schema copy so no network is needed, and cppcheck through ament_lint_auto with findings in each package's `test/` suppressed (gtest macros and the Arduino stub give cppcheck false positives; the files still show up as checked), with `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS` set because ament_cppcheck otherwise skips every file with Ubuntu's cppcheck 2.x (#57).
+- **`docker/Dockerfile.ros2`** — ROS 2 kilted + arduino-cli image used by CI and the agent sandbox (not by the robot).
+- **`.github/pull_request_template.md`** — PR description template; every PR fills in all its sections (see "Pull requests" in `CLAUDE.md`).
+
+## CI
+CI runs in a prebuilt image instead of building `docker/Dockerfile.ros2` on every run:
+- **`.github/workflows/image.yml`** builds `docker/Dockerfile.ros2` (`ros:kilted-ros-base` + the build/test dependencies + arduino-cli with the pinned ESP32 core) and pushes it to `ghcr.io/michmos/mobile_robot_ci:kilted`. It runs only on pushes to `dev` that change the Dockerfile or `image.yml`, and by hand (`workflow_dispatch`). There are no scheduled rebuilds: ROS/apt updates reach CI only with the next Dockerfile change or a manual run. The first run has to be started by hand, `ci.yml` can't pass before the image exists.
+- **`.github/workflows/ci.yml`** runs on pushes to `dev`/`main` and on pull requests. A PR that changes the Dockerfile is still tested against the old image until it is merged to `dev` and `image.yml` has run.
+  - **`ros`**: runs in the GHCR image; `colcon build` + `colcon test` for `mobile_robot_hardware`, `mobile_robot_controller` and `mobile_robot` (with `xv_11_driver` cloned next to the repo and `.github/patches/xv_11_driver-kilted.patch` applied, upstream doesn't build on kilted), same colcon calls as `TESTING.md` §7 but without the sandbox's resource limits (no `--memory`/`MAKEFLAGS=-j2`, parallel `colcon build`; `colcon test` stays `--executor sequential`), fails on `colcon test-result --verbose` and uploads the test results as the `test-results` artifact.
+  - **`firmware`**: runs in the same image (core `esp32:esp32@3.3.12` preinstalled under `ARDUINO_DIRECTORIES_DATA=/opt/arduino15`), `arduino-cli compile --fqbn esp32:esp32:esp32 esp32_firmware`.
+  - **`shell`**: `shellcheck pi_setup/start_robot.sh` on the plain runner.
+
+## Launch arguments (`mobile_robot_launch.py`)
+The defaults are the robot setup; a dev machine (no ESP32, lidar or foxglove) runs
+`ros2 launch mobile_robot mobile_robot_launch.py use_mock_hardware:=true use_lidar:=false use_foxglove:=false`.
+- `use_mock_hardware` (default `false`) — passed to the xacro description: `true` replaces `MobileRobotHardware` (`/dev/esp32`) with `mock_components/GenericSystem` from `hardware_interface`. It runs with `calculate_dynamics`, so the commanded wheel velocity is integrated into the position state and odometry moves.
+- `use_lidar` (default `true`) — start `xv_11_driver` on `/dev/ttyAMA0`.
+- `use_foxglove` (default `true`) — start `foxglove_bridge`.
+
+The controllers are started by a single `spawner` (`joint_state_broadcaster`, then `mobile_robot_controller`) with `--service-call-timeout 5.0`. Don't split it into one spawner per controller: spawners run one after the other (shared lock file), and each one's first service call can lose its response and wait for the timeout, so the stalls add up (#52).
+
+### Hardware watchdog
+`mobile_robot_nodes/mobile_robot/hardware_watchdog.py` (node `hardware_watchdog`, started by `mobile_robot_launch.py` in every setup, also with mock hardware) polls `/controller_manager/list_hardware_components` every `poll_period` s (default 1.0) and exits with code 1 once a hardware component it has seen `active` is in any other state or no longer listed. Its `on_exit=Shutdown` ends the launch; `ros2 launch` then exits with code 0 and the systemd unit (`Restart=always`, `RestartSec=5`, see `pi_setup/`) starts the stack again (#2). Components that have not been active yet are ignored, so startup doesn't trigger it (a failed start is `shutdown_on_initial_state_failure` in `controller_manager.yaml`); a live parameter change doesn't either, the component stays `active` during the handshake. Taking the component out of `active` by hand (`ros2 control set_hardware_component_state ... inactive`) therefore also ends the launch. `mobile_robot_nodes/test/test_hardware_watchdog.launch.py` runs `ros2 launch` as a child process, deactivates the mock component and checks that the launch exits.
+
+`mobile_robot_nodes/test/test_bringup.launch.py` runs exactly this dev setup under `launch_testing` and checks controllers, `/joint_states`, TF and the `/cmd_vel_joy` → twist_mux → controller → `/odom` path.
+
+## Serial protocol (pi ↔ ESP32)
+- Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).
+- **Firmware and hardware plugin must always be updated together**, the two sides reject each other's lines after a wire format change.
+- Configuration handshake: the ESP32 sends `S,SETUP` every 500 ms until configured. The pi sends `C,<handshake_id>,...,<crc>` every 500 ms until it gets the matching `S,ACK,<handshake_id>` (a `S,NACK,...` is retried), and gives up after 10 s (optional hardware parameter `handshake_timeout_ms`, the tests shorten it). Each handshake has a new, increasing id and a fixed payload. State machine: `mobile_robot_hardware/include/mobile_robot_hardware/handshake.hpp`.
+- A handshake runs on `on_configure`, when the ESP32 restarts (SETUP while configured) and on a live parameter change. Until it is acked, `write()` sends zero velocity. A handshake that fails while active makes `read()` return `ERROR`: controller_manager deactivates the component and its controllers, but `ros2_control_node` keeps running (kilted's controller_manager has no option to exit on a runtime hardware error). The `hardware_watchdog` node (see "Hardware watchdog" above) then ends the launch, and systemd restarts the stack, which runs the handshake from scratch.
+- **Live tuning stops the robot briefly:** the hardware component's parameters (`pid_kp`, `pid_ki`, `pid_integral_limit`, `ff_slope_left/right`, `ff_min_duty_left/right`, defaults in `mobile_robot_nodes/description/ros2_control.xacro`) can be changed at runtime with `ros2 param set`. Every change starts a handshake: velocity commands are zero until the ACK, and the ESP32 brakes and resets its PI integrators when it applies the new values. Dragging e.g. an rqt slider therefore keeps the robot standing while tuning.
+- **Wheel wiring:** which L298N output and encoder belong to which wheel is fixed by the `LEFT_*`/`RIGHT_*` pin defines in `esp32_firmware/esp32_firmware.ino` (right wheel on output A, left on output B). Directions are set separately for motor and encoder (`invert_motor_left/right`, `invert_encoder_left/right` in `ros2_control.xacro`, not live): a forward command must turn the wheel forwards, and a wheel turning forwards must report a positive velocity.
+
+## Controller (`MobileRobotController`)
+- Diff-drive controller: subscribes `/cmd_vel` (`TwistStamped`), writes the wheel velocity commands and publishes `/odom` and the `odom -> base_link` tf. Parameters are set in `mobile_robot_nodes/config/controller_manager.yaml` (`wheel_separation`/`wheel_radius` come from the URDF via the launch file).
+- **Command timeout:** `cmd_vel_timeout` (seconds, default 0.5, must be > 0). If no new `cmd_vel` arrived for longer than that, `update()` commands zero velocity until the next one arrives. The age is measured with the controller's update time, from the update in which the command was first seen; the header stamp is ignored (it can be 0 or from another clock). Needed because `twist_mux` just stops forwarding a timed-out input instead of publishing zero.

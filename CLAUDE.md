@@ -1,0 +1,32 @@
+# CLAUDE.md
+* This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+* This file is only meant for tuning claudes behaviour, not to store information. Everything else belongs in a different file - check ./ for other files such as TODO.md and OVERVIEW.md
+* After doing a bigger change update @OVERVIEW.md
+
+## Build and run
+Build from the colcon workspace root (one level above this repo, see `ros2_ws/AGENTS.md`) 
+
+Launch:
+```bash
+ros2 launch mobile_robot mobile_robot_launch.py
+```
+
+Tests: read `TESTING.md` before writing any test (standards, faking hardware, definition of done). Each package keeps its tests in its own `test/` directory. Run them from the workspace root:
+```bash
+colcon test --packages-select mobile_robot_hardware mobile_robot_controller mobile_robot && colcon test-result --verbose
+```
+
+CI (`.github/workflows/ci.yml`) runs the same build and tests, plus the firmware compile and shellcheck, inside the prebuilt image `ghcr.io/michmos/mobile_robot_ci:kilted` (built from `docker/Dockerfile.ros2` by `.github/workflows/image.yml`). A missing test dependency goes into that Dockerfile; CI only sees it after the change is merged to `dev` and `image.yml` has run (see `OVERVIEW.md`).
+
+ESP32 firmware (`esp32_firmware/esp32_firmware.ino`) is flashed independently through the Arduino IDE/arduino-cli (core `esp32:esp32@3.3.12`, no extra libraries); it is not part of the colcon build.
+
+## Code Conventions
+- C++ is formatted with clang-format and the repo's `.clang-format` (LLVM style); `colcon test` checks it with `ament_clang_format` (uncrustify is off). Run `clang-format -i` on C++ files you touch. Linter setup shared by all packages: `lint/lint.cmake`.
+- Follow ROS 2 conventions throughout (topic/node naming, message usage, package layout). If you spot code that doesn't follow them, flag/correct it rather than silently matching it.
+- Pi-side node classes use camelCase for members, trailing underscore for private variables, e.g. `dutyCycle_`, and lambda callbacks stored as `sub_`/`pub_`/`timer_`; keep new nodes consistent with this pattern.
+- ESP32 firmware peripherals are wrapped in small non-copyable classes under `esp32_firmware/inc/` (`L298N`, `Encoder`) — copy/assignment is explicitly deleted since they own hardware pins.
+- URDF is built with xacro macros: `mobile_robot_nodes/description/mobile_robot.urdf.xacro` includes `properties.xacro` (dimensions/masses), `materials.xacro`, and `intertial_macros.xacro` (inertia tensor helpers). Add new physical properties to `properties.xacro` rather than inlining constants in the URDF.
+
+## Pull requests
+- Every PR description must follow `.github/pull_request_template.md`: fill in every section (write "None" or "No test changes" where that applies), keep the template's headings, and tick the checklist only for items that are actually true (strike through or explain the rest).
+- `gh pr create --fill` and `--body` bypass GitHub's template, so pass the filled template via `--body-file` (or a `--body` built from it) when creating a PR with `gh`.

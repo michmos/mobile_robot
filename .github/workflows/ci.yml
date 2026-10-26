@@ -1,0 +1,117 @@
+# The `ros` and `firmware` jobs run inside ghcr.io/michmos/mobile_robot_ci:kilted,
+# built from docker/Dockerfile.ros2 by image.yml, so no run rebuilds the image.
+# - A PR that changes docker/Dockerfile.ros2 is still tested against the OLD image
+#   until it is merged to `dev` and image.yml has run.
+# - image.yml has to run once (it runs on the push that brings it to `dev`, or by
+#   hand: `gh workflow run image.yml --ref dev`) before this workflow can pass.
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+# a new push to the same branch/PR cancels the run that is still going
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build + test the three colcon packages on ROS 2 kilted with the colcon calls
+  # from TESTING.md section 7 (build_docker/install_docker bases). The sandbox's
+  # resource limits (--memory=2g, MAKEFLAGS=-j2, sequential build) are left out:
+  # the runners have 4 CPUs and 16 GB.
+  ros:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/michmos/mobile_robot_ci:kilted
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        # container jobs default to sh, setup.bash needs bash
+        shell: bash
+        # relative to $GITHUB_WORKSPACE. Don't use ${{ github.workspace }} in a
+        # container job, it is the host path, not the one mounted in the container.
+        working-directory: ros2_ws
+    steps:
+      # same layout as on the robot/maintainer machine: ros2_ws/src/<repos>
+      - name: Checkout mobile_robot
+        uses: actions/checkout@v4
+        with:
+          path: ros2_ws/src/mobile_robot
+
+      # launch dependency (exec_depend of mobile_robot), pinned for reproducible runs
+      - name: Checkout xv_11_driver
+        uses: actions/checkout@v4
+        with:
+          repository: mjstn/xv_11_driver
+          ref: 82cce0fcb54f9edc61fe365df95f97aaf7bdc8c0
+          path: ros2_ws/src/xv_11_driver
+
+      # upstream calls declare_parameter(name) without a default, an overload
+      # rclcpp no longer has on kilted. Same change as in the maintainer's checkout.
+      - name: Patch xv_11_driver for kilted
+        run: git -C src/xv_11_driver apply "$PWD/src/mobile_robot/.github/patches/xv_11_driver-kilted.patch"
+
+      - name: Build
+        run: |
+          source /opt/ros/kilted/setup.bash
+          colcon build --build-base build_docker --install-base install_docker \
+            --packages-up-to mobile_robot --cmake-args -DBUILD_TESTING=ON
+
+      - name: Test
+        run: |
+          source /opt/ros/kilted/setup.bash
+          source install_docker/setup.bash
+          # sequential: launch tests with fixed ROS_DOMAIN_IDs could interfere
+          # with each other when run in parallel
+          colcon test --executor sequential --build-base build_docker --install-base install_docker \
+            --packages-select mobile_robot_hardware mobile_robot_controller mobile_robot
+          colcon test-result --test-result-base build_docker --verbose
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            ros2_ws/build_docker/*/test_results/
+            ros2_ws/log/
+          if-no-files-found: ignore
+
+  # compile check only, the firmware is flashed by hand (see AGENTS.md).
+  # arduino-cli, the pinned esp32:esp32@3.3.12 core and pyserial come with the image.
+  firmware:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/michmos/mobile_robot_ci:kilted
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      # container jobs run with HOME=/github/home, so arduino-cli wouldn't find a
+      # core under /root/.arduino15. The image installs it here (also set as ENV
+      # in the Dockerfile, repeated so it's visible where it matters).
+      ARDUINO_DIRECTORIES_DATA: /opt/arduino15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile firmware
+        run: arduino-cli compile --fqbn esp32:esp32:esp32 esp32_firmware
+
+  shell:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # shellcheck is preinstalled on the GitHub ubuntu runners
+      - run: shellcheck pi_setup/start_robot.sh

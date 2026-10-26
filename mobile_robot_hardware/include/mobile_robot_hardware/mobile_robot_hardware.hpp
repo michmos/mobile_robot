@@ -1,0 +1,234 @@
+#ifndef MOBILE_ROBOT_HARDWARE_HPP
+#define MOBILE_ROBOT_HARDWARE_HPP
+
+#include "mobile_robot_hardware/handshake.hpp"
+#include <hardware_interface/handle.hpp>
+#include <hardware_interface/system_interface.hpp>
+#include <hardware_interface/types/hardware_component_interface_params.hpp>
+#include <hardware_interface/types/hardware_interface_return_values.hpp>
+
+#include <io_context/io_context.hpp>
+#include <rcl_interfaces/msg/set_parameters_result.hpp>
+#include <rclcpp/parameter.hpp>
+#include <rclcpp_lifecycle/state.hpp>
+#include <serial_driver/serial_driver.hpp>
+
+// shared with the firmware, the include path points at esp32_firmware/
+#include "inc/ConfigPayload.hpp"
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace mobile_robot_hardware {
+
+class MobileRobotHardware : public hardware_interface::SystemInterface {
+private:
+  const std::vector<std::string> expected_joints_ = {"left_wheel_joint",
+                                                     "right_wheel_joint"};
+
+  // ioContext must outlive driver: SerialDriver only stores a reference to it
+  struct Serial {
+    drivers::common::IoContext ioContext;
+    drivers::serial_driver::SerialDriver driver;
+    std::shared_ptr<drivers::serial_driver::SerialPort>
+        port; // null until opened
+
+    // fed by the async_receive callback in on_configure(); readLine_() drains
+    // it
+    std::string rxBuffer;
+    std::mutex rxMutex;
+    std::condition_variable rxCv;
+
+    Serial() : driver(ioContext) {}
+  } serial_;
+
+  // <param> tags of the <ros2_control> block, parsed in on_init(). These two
+  // stay on the pi, the fields keep the snake_case of the shared struct
+  std::string serialPort_;
+  uint32_t baudRate_ = 0;
+
+  // wraps payload and mutex for safe read, write operations. Shared with the
+  // parameter callback thread, the realtime loop only uses tryGet()
+  class Config {
+  public:
+    protocol::ConfigPayload get() const;
+    void set(const protocol::ConfigPayload &newConfig);
+    // non-blocking get for the realtime loop
+    // @return: false if the lock is held, `out` is left untouched then
+    bool tryGet(protocol::ConfigPayload &out) const;
+
+  private:
+    protocol::ConfigPayload payload_;
+    mutable std::mutex mutex_;
+  } config_;
+
+  // interval between re-sends of unacknowledged config
+  static constexpr std::chrono::milliseconds k_config_retry_interval{500};
+  // this has to cover the esp32 booting after the port was opened. Can be
+  // overridden with the optional hardware parameter handshake_timeout_ms
+  static constexpr std::chrono::milliseconds k_default_handshake_timeout{10000};
+
+  // only touched by on_configure() and the realtime loop, which never run
+  // concurrently. Replaced in on_init() if handshake_timeout_ms is set
+  Handshake handshake_{k_config_retry_interval, k_default_handshake_timeout};
+
+  // snapshot of config_ taken when the running handshake started. Every
+  // re-send of one handshake carries the same values, so an ACK for its id
+  // means the esp32 runs exactly these. Same threads as handshake_
+  protocol::ConfigPayload handshakePayload_;
+
+  // set by the parameter callback, which runs on another thread than read()
+  std::atomic<bool> configChanged_{false};
+
+  // keeps the add_on_set_parameters_callback registration alive
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
+      paramCallbackHandle_;
+
+public:
+  MobileRobotHardware() = default;
+
+  // parse <ros2_control> URDF tag, validate joint/interface config
+  hardware_interface::CallbackReturn
+  on_init(const hardware_interface::HardwareComponentInterfaceParams &params)
+      override;
+
+  // lifecycle: UNCONFIGURED -> INACTIVE
+  // - validate and cash interface handles
+  // - open serial port
+  // - perform handshake
+  hardware_interface::CallbackReturn
+  on_configure(const rclcpp_lifecycle::State &previous_state) override;
+
+  // lifecycle: INACTIVE -> UNCONFIGURED (close serial port)
+  // - close serial
+  // - clear serial buffer
+  // - release interface handles
+  hardware_interface::CallbackReturn
+  on_cleanup(const rclcpp_lifecycle::State &previous_state) override;
+
+  // lifecycle: INACTIVE -> ACTIVE
+  // - init command interfaces to safe values
+  // - clear serial buffer
+  hardware_interface::CallbackReturn
+  on_activate(const rclcpp_lifecycle::State &previous_state) override;
+
+  // lifecycle: ACTIVE -> INACTIVE
+  // - send stop command
+  hardware_interface::CallbackReturn
+  on_deactivate(const rclcpp_lifecycle::State &previous_state) override;
+
+  // lifecycle: any -> FINALIZED (final teardown; reuses on_deactivate()/
+  // on_cleanup() since this can be reached directly from any state)
+  // - call on_deactivate() if previously active
+  // - call on_cleanup() if previously active or inactive
+  hardware_interface::CallbackReturn
+  on_shutdown(const rclcpp_lifecycle::State &previous_state) override;
+
+  // lifecycle: any -> UNCONFIGURED via error transition
+  // - call on_deactivate() if previously active
+  // - call on_cleanup()
+  hardware_interface::CallbackReturn
+  on_error(const rclcpp_lifecycle::State &previous_state) override;
+
+  // realtime loop, called by the controller manager
+  hardware_interface::return_type read(const rclcpp::Time &time,
+                                       const rclcpp::Duration &period) override;
+  hardware_interface::return_type
+  write(const rclcpp::Time &time, const rclcpp::Duration &period) override;
+
+private:
+  //
+  // Handles into the framework-owned interfaces, looked up once by name in
+  // on_configure() via
+  // get_state_interface_handle()/get_command_interface_handle(). The name-based
+  // set_state()/get_command() overloads do a map lookup and throw, so
+  // read()/write() use these handles instead.
+  hardware_interface::StateInterface::SharedPtr leftPositionState_;
+  hardware_interface::StateInterface::SharedPtr leftVelocityState_;
+  hardware_interface::StateInterface::SharedPtr rightPositionState_;
+  hardware_interface::StateInterface::SharedPtr rightVelocityState_;
+
+  hardware_interface::CommandInterface::SharedPtr leftVelocityCommand_;
+  hardware_interface::CommandInterface::SharedPtr rightVelocityCommand_;
+
+  // total to keep track of total tick count
+  // last is used to increment total count when receiving new reading
+  struct Ticks {
+    int32_t leftTotal = 0;
+    int32_t leftLast = 0;
+    int32_t rightTotal = 0;
+    int32_t rightLast = 0;
+  } ticks_;
+
+  uint32_t lastSampleTimeUs_ = 0;
+  // false until read() has consumed a first sample after on_activate()
+  bool hasEncoderBaseline_ = false;
+
+  // blocks up to `timeout` for a '\n'-terminated line in serial_.rxBuffer
+  // @param line: initialized with retrieved line
+  // @param timeout: time to wait for '\n'
+  bool readLine_(std::string &line, std::chrono::milliseconds timeout);
+
+  // blocks until a complete line is buffered or `deadline` has passed
+  // @param lock: holds serial_.rxMutex
+  // @return: true if a complete line is buffered
+  bool waitForLine_(std::unique_lock<std::mutex> &lock,
+                    Handshake::Clock::time_point deadline);
+
+  // starts a handshake that sends `payload`
+  void startHandshake_(const protocol::ConfigPayload &payload);
+
+  // starts a handshake with config_ and blocks until the esp32 acknowledged it
+  // @throws std::runtime_error with the reason if the handshake failed
+  void awaitHandshake_();
+
+  // sends handshakePayload_ with the id of the running handshake
+  // errors are logged, the retry or the deadline of the handshake handle them
+  void sendConfig_();
+
+  // sends the config if the running handshake is due for a (re-)send
+  void serviceHandshake_();
+
+  // serialize and send an "M,..." velocity command to the esp32
+  // @throws std::runtime_error / asio exceptions on a send failure
+  void sendMotorCmd_(float leftVelCmd, float rightVelCmd);
+
+  // handles a SETUP event: the esp32 is unconfigured, e.g. it restarted. Marks
+  // the tick offsets for recalculation on the next encoder sample and starts a
+  // handshake unless one is running
+  void handleSetup_();
+
+  // forwards an "S,ACK,..." or "S,NACK,..." line to the handshake, warns
+  // about one without a valid handshake id
+  void handleHandshakeReply_(const std::string &line);
+
+  // handles all buffered lines (logs, SETUP, ACK, NACK, encoder reports). Of
+  // the encoder reports received since the last SETUP event, only the newest is
+  // processed
+  void processNewLines_();
+
+  // parses an encoder report and updates the position and velocity states
+  // velocity is averaged over the time since the previously processed report
+  void updateEncoderState_(const std::string &line);
+
+  // declare tunable parameters and register
+  // onParamsSet_ so they can be retuned live without a relaunch
+  void declareTunableParams_();
+
+  // callback for parameter changes:
+  // validates new paraemeters and if correct, updates config_ and flags it
+  // for read() to push to the esp32
+  rcl_interfaces::msg::SetParametersResult
+  onParamsSet_(const std::vector<rclcpp::Parameter> &parameters);
+};
+
+} // namespace mobile_robot_hardware
+
+#endif

@@ -1,0 +1,76 @@
+# Build/test image for CI and for the agent sandbox, which has no ROS 2 or
+# arduino-cli installed (see ros2_ws/AGENTS.md). The maintainer installs the
+# dependencies natively and does not use this image.
+# CI doesn't build this file on every run: .github/workflows/image.yml builds it
+# and pushes ghcr.io/michmos/mobile_robot_ci:kilted only when this file changes
+# on `dev` (or by hand), and the jobs in .github/workflows/ci.yml run inside it.
+# Missing a dependency? Add it below. CI sees it only after the change is merged
+# to `dev` and image.yml has run.
+FROM ros:kilted-ros-base
+
+LABEL org.opencontainers.image.source=https://github.com/michmos/mobile_robot
+
+# ros-base instead of osrf/ros:kilted-desktop: desktop is several GB of GUI
+# tools, demos and rviz/rqt that nothing here needs. The first block is what the
+# build and tests use but that desktop brought in implicitly. Most of it is
+# already in ros-base (ros_core) or the ros:*-ros-base image, it is listed so a
+# change of the base image can't drop it silently.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      curl \
+      git \
+      python3-colcon-common-extensions \
+      python3-pip \
+      python3-pytest \
+      python3-yaml \
+      ros-kilted-ament-cmake-gtest \
+      ros-kilted-ament-cmake-pytest \
+      ros-kilted-ament-cmake-ros \
+      ros-kilted-ament-lint-auto \
+      ros-kilted-ament-lint-common \
+      ros-kilted-launch-ros \
+      ros-kilted-launch-testing \
+      ros-kilted-launch-testing-ament-cmake \
+      ros-kilted-launch-testing-ros \
+      ros-kilted-rclpy \
+      ros-kilted-robot-state-publisher \
+      ros-kilted-joy \
+      ros-kilted-teleop-twist-joy \
+      ros-kilted-ros2-control \
+      ros-kilted-ros2-controllers \
+      ros-kilted-serial-driver \
+      ros-kilted-asio-cmake-module \
+      ros-kilted-xacro \
+      ros-kilted-urdfdom-py \
+      ros-kilted-ament-cmake-clang-format \
+      ros-kilted-twist-mux \
+      ros-kilted-foxglove-bridge \
+      ros-kilted-slam-toolbox \
+    && rm -rf /var/lib/apt/lists/*
+# ^ joy/teleop_twist_joy: used by mobile_robot_nodes/launch/joystick_launch.py
+#   but not declared in package.xml, desktop shipped them.
+# ^ slam_toolbox: SLAM mapping and localization, pulls in nav2_map_server
+#   for saving maps.
+
+# compile check for the esp32 firmware (esp32_firmware/), not used at runtime
+# The esp32:esp32 core is pinned to an exact version (ESP32_CORE_VERSION) so
+# the compile check is reproducible; the maintainer flashes with the same one.
+# The data dir and the board URL are set through env vars instead of
+# ~/.arduino15/arduino-cli.yaml: GitHub container jobs run with HOME=/github/home,
+# so anything under /root would not be found there.
+ENV ARDUINO_DIRECTORIES_DATA=/opt/arduino15 \
+    ARDUINO_BOARD_MANAGER_ADDITIONAL_URLS=https://espressif.github.io/arduino-esp32/package_esp32_index.json
+# arduino-cli pinned (latest release when this was written), install.sh taken
+# from the same tag
+ARG ARDUINO_CLI_VERSION=v1.5.1
+ARG ESP32_CORE_VERSION=3.3.12
+RUN curl -fsSL "https://raw.githubusercontent.com/arduino/arduino-cli/${ARDUINO_CLI_VERSION}/install.sh" \
+      | BINDIR=/usr/local/bin sh -s "${ARDUINO_CLI_VERSION}" \
+ && arduino-cli core update-index \
+ && arduino-cli core install "esp32:esp32@${ESP32_CORE_VERSION}" \
+ && rm -rf "${ARDUINO_DIRECTORIES_DATA}/staging" \
+ && pip3 install --break-system-packages pyserial
+# ^ staging holds the downloaded core and tool archives, they are unpacked by
+#   the install and not needed afterwards.
+# ^ pyserial is needed by esptool_py's post-build size-check step, not for flashing.

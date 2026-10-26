@@ -1,0 +1,34 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>mobile_robot_hardware</name>
+  <version>0.0.0</version>
+  <description>TODO: Package description</description>
+  <maintainer email="Michael.Moser11@web.de">Michael Moser</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <!-- io_context's exported CMake config calls find_package(asio_cmake_module),
+       but io_context's own package.xml only declares it as buildtool_depend
+       instead of buildtool_export_depend, so it never reaches us via apt/rosdep
+       on its own -->
+  <buildtool_depend>asio_cmake_module</buildtool_depend>
+
+  <depend>hardware_interface</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>pluginlib</depend>
+  <depend>io_context</depend>
+  <depend>serial_driver</depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_cmake_ros</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_clang_format</test_depend>
+  <test_depend>ament_cmake_xmllint</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

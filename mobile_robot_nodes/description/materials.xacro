@@ -1,0 +1,11 @@
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <material name="wood">
+    <color rgba="1 1 1 1"/>
+  </material>
+
+  <material name="plastic">
+    <color rgba="1 0.3 0.1 1"/>
+  </material>
+
+</robot>

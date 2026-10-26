@@ -1,0 +1,10 @@
+<library path="mobile_robot_hardware">
+  <class name="mobile_robot_hardware/MobileRobotHardware"
+         type="mobile_robot_hardware::MobileRobotHardware"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      ros2_control SystemInterface for the mobile_robot's esp32-based motor
+      controller, communicating over a serial connection.
+    </description>
+  </class>
+</library>
