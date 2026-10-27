@@ -4,8 +4,7 @@
 # logs a warning and the last installed build is launched, so the robot also
 # starts offline.
 
-# switch to main once main is stable
-BRANCH=dev
+BRANCH=main
 REPO_URL=https://github.com/michmos/mobile_robot.git
 ROS_SETUP=/opt/ros/kilted/setup.bash
 WS=/home/mypi/robot_ws
