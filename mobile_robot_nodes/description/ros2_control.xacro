@@ -22,24 +22,24 @@
         <param name="baud_rate">115200</param>
 
         <!-- PI gains, shared by both wheels, integral limit is a duty fraction -->
-        <param name="pid_kp">0.5</param>
-        <param name="pid_ki">2.0</param>
+        <param name="pid_kp">0.2</param>
+        <param name="pid_ki">0.12</param>
         <param name="pid_integral_limit">0.3</param>
 
         <!-- feedforward per wheel, slope in duty fraction per (rad/s),
              min_duty in [0,1) compensates the motor deadband -->
-        <param name="ff_slope_left">0.1</param>
-        <param name="ff_slope_right">0.1</param>
-        <param name="ff_min_duty_left">0.0</param>
-        <param name="ff_min_duty_right">0.0</param>
+        <param name="ff_slope_left">0.0327</param>
+        <param name="ff_slope_right">0.0320</param>
+        <param name="ff_min_duty_left">0.1895</param>
+        <param name="ff_min_duty_right">0.2021</param>
 
         <!-- encoder edges per wheel revolution (4x decoding), measured by
              hand; re-measure under power (#69) -->
-        <param name="ticks_per_wheel_rev">1964</param>
+        <param name="ticks_per_wheel_rev">1975</param>
 
         <!-- report_rate_hz must not exceed control_rate_hz -->
         <param name="watchdog_timeout_ms">200</param>
-        <param name="control_rate_hz">200</param>
+        <param name="control_rate_hz">50</param>
         <param name="report_rate_hz">50</param>
 
         <!-- direction fixes for the wiring, motor and encoder separately: a
