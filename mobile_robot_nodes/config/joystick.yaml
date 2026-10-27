@@ -13,16 +13,16 @@ teleop_node:
     axis_linear: # Left thumb stick vertical
       x: 1       # index from the axis array
     scale_linear:
-      x: 0.5     # max speed in m/s
+      x: 0.2     # max speed in m/s
     scale_linear_turbo:
-      x: 1.0
+      x: 0.4
 
     axis_angular: # Left thumb stick horizontal
       yaw: 0      # index from the axis array
     scale_angular:
-      yaw: 0.5    # max speed in rad/s
+      yaw: 2.0    # max speed in rad/s
     scale_angular_turbo:
-      yaw: 1.0
+      yaw: 2.5
 
     # Button Mappings
     require_enable_button: false
