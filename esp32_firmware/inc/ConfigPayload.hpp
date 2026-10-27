@@ -54,8 +54,9 @@ struct ConfigPayload {
   float min_duty_left = 0.0f;
   float min_duty_right = 0.0f;
 
-  // counted encoder edges per wheel revolution
-  float ticks_per_wheel_rev = 480.0f;
+  // counted encoder edges per wheel revolution (4x decoding). The pi sends
+  // its own value from ros2_control.xacro
+  float ticks_per_wheel_rev = 1964.0f;
 
   uint16_t watchdog_timeout_ms = 200; // stop motors if no MotorCmd within this
   uint16_t control_rate_hz = 200;     // PI update rate
@@ -120,8 +121,7 @@ inline const char *configFieldName(e_config_field field) {
 // true if every field of a and b is equal. Floats are compared exactly on
 // purpose: the wire format round-trips them bit for bit
 inline bool samePayload(const ConfigPayload &a, const ConfigPayload &b) {
-  return a.kp == b.kp && a.ki == b.ki &&
-         a.integral_limit == b.integral_limit &&
+  return a.kp == b.kp && a.ki == b.ki && a.integral_limit == b.integral_limit &&
          a.slope_left == b.slope_left && a.slope_right == b.slope_right &&
          a.min_duty_left == b.min_duty_left &&
          a.min_duty_right == b.min_duty_right &&

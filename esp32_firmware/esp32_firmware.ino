@@ -35,9 +35,6 @@
 // constants
 const uint8_t k_pwm_res = 16;
 
-// locks
-portMUX_TYPE g_encoder_mux = portMUX_INITIALIZER_UNLOCKED;
-
 SerialChannel g_sc;
 // motor 1 of the driver is the left wheel, motor 2 the right one (Drive.hpp)
 L298N g_motorDriver(LEFT_EN_PIN, LEFT_IN1_PIN, LEFT_IN2_PIN, RIGHT_EN_PIN,
@@ -52,16 +49,14 @@ Drive g_drive(g_sc, g_motorDriver, g_encoderLeft, g_encoderRight, g_motorControl
 // Sensor data
 //////////////////////////////////////////////////////////////////////////////////
 
-// use portENTER_CRITICAL to disable interrupts ensuring all sample data to be taken
-// around the same time
+// counts read back to back with the timestamp in between. PCNT counts in
+// hardware, so a preemption here only skews the sample, no ticks are lost
 EncoderSample
 sampleEncoders() {
   EncoderSample s;
-  portENTER_CRITICAL(&g_encoder_mux);
   s.left_ticks = g_encoderLeft.get_tick_count();
-  s.right_ticks = g_encoderRight.get_tick_count();
   s.us = micros();
-  portEXIT_CRITICAL(&g_encoder_mux);
+  s.right_ticks = g_encoderRight.get_tick_count();
   return s;
 }
 

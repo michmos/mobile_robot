@@ -235,10 +235,9 @@ TEST_F(DriveTest, UpdateConfigAppliesTheMotorInversion) {
   EXPECT_TRUE(rightForwards());
 
   // its encoder is wired on its own and still counts the normal way
-  arduino_stub::setDigitalRead(k_enc1b, LOW);
-  arduino_stub::setDigitalRead(k_enc2b, LOW);
-  ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc1a));
-  ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc2a));
+  // one edge forwards on each (the library counts forwards down)
+  ASSERT_TRUE(arduino_stub::setEncoderCount(k_enc1a, -1));
+  ASSERT_TRUE(arduino_stub::setEncoderCount(k_enc2a, -1));
   EXPECT_EQ(encoderLeft_.get_tick_count(), 1);
   EXPECT_EQ(encoderRight_.get_tick_count(), 1);
 }
@@ -251,10 +250,9 @@ TEST_F(DriveTest, UpdateConfigAppliesTheEncoderInversion) {
   updateMotor(0, 0, 0);
 
   // the right encoder counts the other way
-  arduino_stub::setDigitalRead(k_enc1b, LOW);
-  arduino_stub::setDigitalRead(k_enc2b, LOW);
-  ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc1a));
-  ASSERT_TRUE(arduino_stub::fireInterrupt(k_enc2a));
+  // one edge forwards on each (the library counts forwards down)
+  ASSERT_TRUE(arduino_stub::setEncoderCount(k_enc1a, -1));
+  ASSERT_TRUE(arduino_stub::setEncoderCount(k_enc2a, -1));
   EXPECT_EQ(encoderLeft_.get_tick_count(), 1);
   EXPECT_EQ(encoderRight_.get_tick_count(), -1);
 
