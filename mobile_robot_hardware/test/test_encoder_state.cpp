@@ -26,9 +26,9 @@ using namespace mobile_robot_hardware::test;
 
 namespace {
 
-// set by the fixture instead of the xacro default, so the tick counts below
-// are round fractions of a revolution
-constexpr double k_ticks_per_rev = 480.0;
+// arbitrary test value, not the robot's (xacro: 1964), so the tick counts
+// below are round fractions of a revolution (240 = half)
+constexpr int k_ticks_per_rev = 480;
 
 constexpr double k_tolerance = 1e-9;
 
@@ -99,7 +99,8 @@ class EncoderStateTest : public MobileRobotHardwareTest {
 protected:
   void SetUp() override {
     MobileRobotHardwareTest::SetUp();
-    ASSERT_EQ(init(fakeParams({{"ticks_per_wheel_rev", "480"}})),
+    ASSERT_EQ(init(fakeParams(
+                  {{"ticks_per_wheel_rev", std::to_string(k_ticks_per_rev)}})),
               CallbackReturn::SUCCESS);
     configureAndActivate();
     // the config line of on_configure, so waitForLine("C,") later only sees

@@ -1,12 +1,10 @@
 #ifndef ESP32ENCODER_STUB_H
 #define ESP32ENCODER_STUB_H
 
-// host stand-in for the ESP32Encoder library (madhephaestus/ESP32Encoder, the
-// PCNT quadrature counter esp32_firmware/inc/Encoder.hpp is built on). Only
-// the subset the firmware uses. Instead of counting edges, each attached
-// encoder records how it was set up and returns a count the test sets, both
-// through arduino_stub (setEncoderCount(), encoderUnit()). The state is
-// cleared by arduino_stub::reset() like the rest of the stub
+// host fake of the ESP32Encoder library (only what the firmware uses). Each
+// attached encoder records its setup and returns a count the test sets, see
+// arduino_stub::encoderUnit()/setEncoderCount(). Cleared by
+// arduino_stub::reset()
 
 #include "Arduino.h"
 

@@ -99,10 +99,8 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     env:
-      # container jobs run with HOME=/github/home, so arduino-cli wouldn't find a
-      # core under /root/.arduino15 or libraries under /root/Arduino. The image
-      # installs them here (also set as ENV in the Dockerfile, repeated so it's
-      # visible where it matters).
+      # container jobs run with HOME=/github/home: point arduino-cli at the
+      # image's core and library dirs (same as the Dockerfile's ENV).
       ARDUINO_DIRECTORIES_DATA: /opt/arduino15
       ARDUINO_DIRECTORIES_USER: /opt/arduino
     steps:

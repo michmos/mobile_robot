@@ -23,8 +23,7 @@ class EncoderTest : public ::testing::Test {
 protected:
   void SetUp() override { arduino_stub::reset(); }
 
-  // the library count of encoder_. The library counts down while A leads B,
-  // the direction the firmware reports as positive
+  // sets the library count of encoder_ (counts down while A leads B)
   static void libraryCount(int64_t count) {
     ASSERT_TRUE(arduino_stub::setEncoderCount(k_a, count));
   }
@@ -82,9 +81,7 @@ TEST_F(EncoderTest, GlitchFilterStaysWithinTheLibraryRange) {
 }
 
 TEST_F(EncoderTest, ALeadingBCountsUp) {
-  // one full A/B cycle with A leading is -4 in the library, +4 here, the
-  // direction the 1x firmware counted up, so invert_encoder_* keep their
-  // meaning
+  // one full A/B cycle with A leading: -4 in the library, +4 here
   encoder_.setup();
 
   libraryCount(-4);
@@ -183,9 +180,7 @@ TEST_F(EncoderTest, Int32LimitsPassThrough) {
 }
 
 TEST_F(EncoderTest, CountBeyondInt32Wraps) {
-  // the library counts in 64 bit, the wire protocol carries int32. The
-  // narrowing wraps modulo 2^32, so differences between two reports stay
-  // right across the wrap
+  // the int32 narrowing wraps modulo 2^32, differences stay right
   encoder_.setup();
   const int64_t max = std::numeric_limits<int32_t>::max();
 

@@ -49,16 +49,8 @@ Drive g_drive(g_sc, g_motorDriver, g_encoderLeft, g_encoderRight, g_motorControl
 // Sensor data
 //////////////////////////////////////////////////////////////////////////////////
 
-// both counts and the timestamp are taken back to back, with the timestamp in
-// between so it is at most one read away from either count. There is no
-// critical section around them: ESP32Encoder::getCount() already takes the
-// library's spinlock and, inside it, the PCNT driver's
-// (pcnt_unit_get_count()). Another spinlock around both reads would nest them
-// and keep interrupts off across two driver calls running from flash, while
-// ESP-IDF wants critical sections short and free of driver calls. The PCNT
-// hardware keeps counting on its own, so a preemption in between loses no
-// ticks, it only moves the samples apart; a read takes a few us, at full
-// speed an edge comes every ~100 us
+// counts read back to back with the timestamp in between. PCNT counts in
+// hardware, so a preemption here only skews the sample, no ticks are lost
 EncoderSample
 sampleEncoders() {
   EncoderSample s;

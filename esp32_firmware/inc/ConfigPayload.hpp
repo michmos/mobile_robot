@@ -54,9 +54,8 @@ struct ConfigPayload {
   float min_duty_left = 0.0f;
   float min_duty_right = 0.0f;
 
-  // counted encoder edges per wheel revolution, 4x (full quadrature)
-  // decoding: 4 x 491 measured at 1x, to be re-measured under power (#69).
-  // The pi always sends its own value (ros2_control.xacro)
+  // counted encoder edges per wheel revolution (4x decoding). The pi sends
+  // its own value from ros2_control.xacro
   float ticks_per_wheel_rev = 1964.0f;
 
   uint16_t watchdog_timeout_ms = 200; // stop motors if no MotorCmd within this
