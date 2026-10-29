@@ -10,7 +10,7 @@ controller_manager:
     hardware_components_initial_state:
       shutdown_on_initial_state_failure: true
 
-    update_rate: 200
+    update_rate: 50
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
