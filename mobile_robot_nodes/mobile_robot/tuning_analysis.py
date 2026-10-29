@@ -112,11 +112,11 @@ def mean_velocity(samples, max_rate=None):
     Far more accurate than averaging the reported velocities, which are
     quantized to one encoder tick per report (~0.65 rad/s at 50 Hz).
 
-    /joint_states comes at the controller rate (200 Hz), but the position
-    only changes with each esp32 report (50 Hz): it holds for ~4 samples,
-    then steps by a whole report's motion within one sample interval. So
-    with max_rate the rate is judged from one position change to the next,
-    not per sample, else every step looks ~4x too fast.
+    /joint_states comes at the controller rate, but the position only
+    changes with each esp32 report: if the controller runs faster, it holds
+    for several samples, then steps by a whole report's motion within one
+    sample interval. So with max_rate the rate is judged from one position
+    change to the next, not per sample, else every step looks too fast.
 
     Only the span from the first to the last change is used. Before the
     first change and after the last one the position holds for an unknown
@@ -481,9 +481,9 @@ def smooth(times, values, window):
     Centered moving average over window s, the window shrinks at the edges.
 
     Centered so the smoothing doesn't add lag to the rise time. Over time,
-    not a number of samples: /joint_states (200 Hz) repeats each esp32
-    report (50 Hz) ~4 times, so a window of samples would span ~4x fewer
-    reports than intended.
+    not a number of samples: /joint_states repeats each esp32 report when
+    the controller runs faster than the reports, so a window of samples
+    would span fewer reports than intended.
 
     :param times: s, in order, one per value
     :param window: s, samples within window / 2 of a sample are averaged
