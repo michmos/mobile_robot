@@ -11,7 +11,7 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
   `Encoder.hpp` wraps the `ESP32Encoder` library (pinned `5.0.0`, the only non-core dependency): full quadrature (4x) decoding on the PCNT hardware counter with internal pull-ups and a 5 us glitch filter, so a glitch on one channel counts +1 and -1 and cancels instead of piling up in one direction (#69). `ticks_per_wheel_rev` (`ros2_control.xacro`) is therefore in 4x edges (~1964). The host tests use the library fake `mobile_robot_hardware/test/arduino_stub/ESP32Encoder.h`.
 - **`mobile_robot_hardware/`** — `ros2_control` hardware interface plugin; owns the serial link to the ESP32.
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin (diff drive). The kinematics/odometry math lives in free functions in `include/mobile_robot_controller/kinematics.hpp`. Subscribes to the global `/cmd_vel` (`TwistStamped`, written by twist_mux), publishes `/odom` and the `odom` -> `base_link` transform on `/tf`.
-- **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` config, URDF/xacro description, the `hardware_watchdog` node.
+- **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` and slam_toolbox configs, URDF/xacro description, the `hardware_watchdog` node and the `save_map` script.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`. `start_robot.sh` clones/updates the `dev` branch, rebuilds on a new commit and launches; offline or on a failed update/build it launches the last installed build (#59).
 - **`lint/`** — linter setup shared by the three packages' `colcon test` (`lint.cmake`): C++ style via `ament_clang_format` with the repo's `.clang-format` instead of uncrustify, xmllint validating `package.xml` against a local schema copy so no network is needed, and cppcheck through ament_lint_auto with findings in each package's `test/` suppressed (gtest macros and the Arduino stub give cppcheck false positives; the files still show up as checked), with `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS` set because ament_cppcheck otherwise skips every file with Ubuntu's cppcheck 2.x (#57).
 - **`docker/Dockerfile.ros2`** — ROS 2 kilted + arduino-cli (pinned ESP32 core and `ESP32Encoder` library) image used by CI and the agent sandbox (not by the robot).
@@ -31,6 +31,7 @@ The defaults are the robot setup; a dev machine (no ESP32, lidar or foxglove) ru
 - `use_mock_hardware` (default `false`) — passed to the xacro description: `true` replaces `MobileRobotHardware` (`/dev/esp32`) with `mock_components/GenericSystem` from `hardware_interface`. It runs with `calculate_dynamics`, so the commanded wheel velocity is integrated into the position state and odometry moves.
 - `use_lidar` (default `true`) — start `xv_11_driver` on `/dev/ttyAMA0`.
 - `use_foxglove` (default `true`) — start `foxglove_bridge`.
+- `slam` (default `off`, or `mapping` / `localization`) — include `slam_launch.py` with `mode:=<slam>`, see "SLAM" below. `map`, `map_dir` and `use_sim_time` are passed through to it.
 
 The controllers are started by a single `spawner` (`joint_state_broadcaster`, then `mobile_robot_controller`) with `--service-call-timeout 5.0`. Don't split it into one spawner per controller: spawners run one after the other (shared lock file), and each one's first service call can lose its response and wait for the timeout, so the stalls add up (#52).
 
@@ -38,6 +39,26 @@ The controllers are started by a single `spawner` (`joint_state_broadcaster`, th
 `mobile_robot_nodes/mobile_robot/hardware_watchdog.py` (node `hardware_watchdog`, started by `mobile_robot_launch.py` in every setup, also with mock hardware) polls `/controller_manager/list_hardware_components` every `poll_period` s (default 1.0) and exits with code 1 once a hardware component it has seen `active` is in any other state or no longer listed. Its `on_exit=Shutdown` ends the launch; `ros2 launch` then exits with code 0 and the systemd unit (`Restart=always`, `RestartSec=5`, see `pi_setup/`) starts the stack again (#2). Components that have not been active yet are ignored, so startup doesn't trigger it (a failed start is `shutdown_on_initial_state_failure` in `controller_manager.yaml`); a live parameter change doesn't either, the component stays `active` during the handshake. Taking the component out of `active` by hand (`ros2 control set_hardware_component_state ... inactive`) therefore also ends the launch. `mobile_robot_nodes/test/test_hardware_watchdog.launch.py` runs `ros2 launch` as a child process, deactivates the mock component and checks that the launch exits.
 
 `mobile_robot_nodes/test/test_bringup.launch.py` runs exactly this dev setup under `launch_testing` and checks controllers, `/joint_states`, TF and the `/cmd_vel_joy` → twist_mux → controller → `/odom` path.
+
+## SLAM (slam_toolbox)
+`mobile_robot_nodes/launch/slam_launch.py` starts slam_toolbox (lifecycle node `slam_toolbox`, configured and activated by the launch). It consumes `/scan` (frame `lidar`) and the `odom -> base_link` tf from `mobile_robot_controller` and publishes `map -> odom` and `/map`. `mobile_robot_launch.py slam:=<mode>` includes it; it also runs on its own, e.g. on the laptop next to `mobile_robot_launch.py slam:=off` on the Pi (same frames and topics, the clocks must be in sync, see #65).
+- `mode:=mapping` (default): `async_slam_toolbox_node` with `config/slam_mapping.yaml`.
+- `mode:=localization map:=<name>`: `localization_slam_toolbox_node` with `config/slam_localization.yaml` and `map_file_name` = `<map_dir>/<name>/<name>`. The launch fails if `<name>.posegraph` is missing.
+- `map_dir` (default `$MAP_DIR`, else `~/maps`): a map `<name>` lives in `<map_dir>/<name>/`: `<name>.posegraph` + `<name>.data` (pose graph, for localization or to continue mapping) and `<name>.pgm` + `<name>.yaml` (occupancy grid for nav2's map_server).
+- The configs only list values that differ from slam_toolbox's defaults or are pinned, each with its reason (`base_frame: base_link`, `max_laser_range: 5.0` for the XV-11, nodes every 0.2 m / 0.2 rad, `/map` every 5 s, `map -> odom` at 20 Hz). `test_smoke.py` checks that both files agree on frames, resolution and range.
+- `ros2 run mobile_robot save_map <name> [--map-dir DIR]` (`mobile_robot/save_map.py`) calls `/slam_toolbox/serialize_map` and `/slam_toolbox/save_map` (which runs nav2's `map_saver_cli`). slam_toolbox writes the files, so run it on the machine slam_toolbox runs on.
+- RViz: `rviz2 -d $(ros2 pkg prefix mobile_robot)/share/mobile_robot/config/slam.rviz` (fixed frame `map`; Map, LaserScan, TF, RobotModel, the slam_toolbox panel and the "2D Pose Estimate" tool).
+- Tests: `test_slam_launch.py` (launch arguments of both launch files, no node started), `test_map_storage.py` (map paths, `save_map` arguments), `test_slam.launch.py` (`slam_launch.py mode:=mapping` with a fake XV-11 `/scan` and static tf: `map -> odom`, `/map` and `save_map`).
+
+### Mapping a room
+1. `ros2 launch mobile_robot mobile_robot_launch.py slam:=mapping map:=<name>` (on the robot, after `sudo systemctl stop mobile_robot`), RViz with `slam.rviz` on the laptop.
+2. Drive slowly with the joystick, turn slowly (scan matching follows the 5 Hz lidar), keep walls in view.
+3. Close loops: come back to where you started and through rooms you already mapped, so slam_toolbox can correct the drift. Check in RViz that walls are not doubled.
+4. Save while slam_toolbox still runs: `ros2 run mobile_robot save_map <name>`.
+
+### Localization in a saved map
+1. `ros2 launch mobile_robot mobile_robot_launch.py slam:=localization map:=<name>`.
+2. slam_toolbox starts at the map origin, i.e. where mapping started. If the robot is elsewhere, set its pose in RViz with "2D Pose Estimate" (publishes `/initialpose`) and drive a bit until the scan lines up with the map.
 
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).

@@ -1,0 +1,28 @@
+# slam_toolbox online async mapping (slam_launch.py mode:=mapping).
+# Only values that differ from the node's defaults or are pinned on purpose;
+# slam_localization.yaml repeats the frame and sensor values.
+slam_toolbox:
+  ros__parameters:
+    mode: mapping
+    # pinned, the launch file and the robot rely on these names
+    odom_frame: odom
+    map_frame: map
+    # root of the URDF, there is no base_footprint
+    base_frame: base_link
+    scan_topic: /scan
+
+    # pinned, also the grid resolution of the saved .pgm
+    resolution: 0.05
+    # XV-11 range, longer readings are noise
+    max_laser_range: 5.0
+
+    # add a scan to the graph every 0.2 m / 0.2 rad (default 0.5 / 0.5):
+    # a small robot in a room needs denser nodes for scan matching
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.2
+
+    # redraw /map every 5 s (default 10 s), cheap for a room-sized map
+    map_update_interval: 5.0
+    # map -> odom at 20 Hz (default), plenty for 5 Hz scans; upstream's
+    # example 0.02 costs CPU on the Pi
+    transform_publish_period: 0.05
