@@ -25,14 +25,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ros_discovery_server mobile_robot
 ```
 
-Add this line to `/home/mypi/.bashrc` so interactive shells get the same variables:
-```bash
+Add this line to the shell rc of the Pi user (`~/.zshrc` for zsh, `~/.bashrc` for bash) so interactive shells get the same variables:
+```zsh
 set -a; . ~/ros_env; set +a
 ```
 
 The Pi's nodes use `127.0.0.1` for the server, so `/home/mypi/ros_env` never needs editing.
 
-The laptop needs `RMW_IMPLEMENTATION` and `ROS_DOMAIN_ID` (same as the Pi) and `ROS_DISCOVERY_SERVER` set to the Pi's current IP in its own shell config. The hotspot can give the Pi a new IP, so only the laptop's value changes then.
+The laptop needs `RMW_IMPLEMENTATION`, `ROS_DOMAIN_ID` and `ROS_SUPER_CLIENT=true` (same as the Pi), and `ROS_DISCOVERY_SERVER` set to the Pi's current IP, in its own shell config. The hotspot can give the Pi a new IP, so only the laptop's value changes then.
 
 ## Code updates on start
 On every (re)start `start_robot.sh` gets the latest code before it launches:

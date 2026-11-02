@@ -1,6 +1,8 @@
 # Copy to /home/mypi/ros_env on the Pi. Plain KEY=value lines (no export): read by
-# systemd EnvironmentFile= and, in bash, via `set -a; . ~/ros_env; set +a`.
+# systemd EnvironmentFile= and, in bash or zsh, via `set -a; . ~/ros_env; set +a`.
 # The Pi's nodes reach the server on loopback, so this does not change with the network.
+# Super client sees all participants and endpoints; without it the ros2 daemon lists nodes but no topics.
 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ROS_DISCOVERY_SERVER=127.0.0.1:11811
+ROS_SUPER_CLIENT=true
 ROS_DOMAIN_ID=0
