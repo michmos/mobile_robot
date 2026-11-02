@@ -1,0 +1,6 @@
+# Copy to /home/mypi/ros_env on the Pi and set the IP to the Pi's address on the network.
+# Plain KEY=value lines (no export): read by systemd EnvironmentFile= and, in bash,
+# via `set -a; . ~/ros_env; set +a`.
+RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ROS_DISCOVERY_SERVER=192.0.2.10:11811
+ROS_DOMAIN_ID=42

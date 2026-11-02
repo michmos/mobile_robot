@@ -6,21 +6,34 @@ Files to start the robot automatically on boot. Run everything on the Pi.
 | `udev.d/99-esp32.rules` | `/etc/udev/rules.d/` | Stable `/dev/esp32` name for the ESP32 (CH340, `1a86:7523`) |
 | `start_robot.sh` | `/home/mypi/` | Updates, builds and launches the code, called from mobile_robot.service |
 | `systemd/mobile_robot.service` | `/etc/systemd/system/` | Runs `/home/mypi/start_robot.sh` on boot, restarts on failure |
+| `systemd/ros_discovery_server.service` | `/etc/systemd/system/` | Runs the Fast DDS discovery server (ID 0, port 11811) on boot |
+| `ros_env.example` | `/home/mypi/ros_env` | ROS environment shared by both services and interactive shells |
 
 ## Install
 Follow these instructions to setup the automatic on boot launch - only needs to be done once
 ```bash
 cd pi_setup
 sudo cp udev.d/99-esp32.rules /etc/udev/rules.d/
-sudo cp systemd/mobile_robot.service /etc/systemd/system/
+sudo cp systemd/ros_discovery_server.service systemd/mobile_robot.service /etc/systemd/system/
+cp ros_env.example /home/mypi/ros_env
+nano /home/mypi/ros_env               # set ROS_DISCOVERY_SERVER to the Pi's current IP
 
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ls -l /dev/esp32                      # should point to ttyUSB0
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now mobile_robot
+sudo systemctl enable --now ros_discovery_server mobile_robot
 ```
+
+Add this line to `/home/mypi/.bashrc` so interactive shells get the same variables:
+```bash
+set -a; . ~/ros_env; set +a
+```
+
+The laptop needs the same three variables with its own shell config, and `ROS_DISCOVERY_SERVER` must point at the Pi.
+
+The hotspot can hand the Pi a different IP, so update `/home/mypi/ros_env` when it changes and restart both services.
 
 ## Code updates on start
 On every (re)start `start_robot.sh` gets the latest code before it launches:
@@ -45,6 +58,7 @@ sudo systemctl restart mobile_robot
 journalctl -u mobile_robot -f             # logs
 journalctl -u mobile_robot -p err --since "10 min ago"  # errors only
 sudo systemctl reset-failed mobile_robot  # after the restart limit was hit
+journalctl -u ros_discovery_server -f     # discovery server logs
 ```
 
 The service gives up after 5 starts within 90 s (`StartLimit*` in the unit).
