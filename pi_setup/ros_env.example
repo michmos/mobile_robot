@@ -3,4 +3,4 @@
 # via `set -a; . ~/ros_env; set +a`.
 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 ROS_DISCOVERY_SERVER=192.0.2.10:11811
-ROS_DOMAIN_ID=42
+ROS_DOMAIN_ID=0
