@@ -31,6 +31,13 @@ def generate_launch_description():
     ])
 
 
+def shutdown_on_spawner_failure(event, context):
+    # The spawner exits 0 after loading its controllers, so only failures end the launch.
+    if event.returncode != 0:
+        return Shutdown(reason='spawner failed')
+    return None
+
+
 def launch_setup(context):
     use_mock_hardware = LaunchConfiguration(
         'use_mock_hardware').perform(context)
@@ -90,6 +97,7 @@ def launch_setup(context):
             arguments=['joint_state_broadcaster', 'mobile_robot_controller',
                        '--service-call-timeout', '5.0'],
             output='screen',
+            on_exit=shutdown_on_spawner_failure,
         ),
         Node(
             package='twist_mux',
