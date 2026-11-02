@@ -16,7 +16,6 @@ cd pi_setup
 sudo cp udev.d/99-esp32.rules /etc/udev/rules.d/
 sudo cp systemd/ros_discovery_server.service systemd/mobile_robot.service /etc/systemd/system/
 cp ros_env.example /home/mypi/ros_env
-nano /home/mypi/ros_env               # set ROS_DISCOVERY_SERVER to the Pi's current IP
 
 sudo udevadm control --reload-rules
 sudo udevadm trigger
@@ -31,9 +30,9 @@ Add this line to `/home/mypi/.bashrc` so interactive shells get the same variabl
 set -a; . ~/ros_env; set +a
 ```
 
-The laptop needs the same three variables with its own shell config, and `ROS_DISCOVERY_SERVER` must point at the Pi.
+The Pi's nodes use `127.0.0.1` for the server, so `/home/mypi/ros_env` never needs editing.
 
-The hotspot can hand the Pi a different IP, so update `/home/mypi/ros_env` when it changes and restart both services.
+The laptop needs `RMW_IMPLEMENTATION` and `ROS_DOMAIN_ID` (same as the Pi) and `ROS_DISCOVERY_SERVER` set to the Pi's current IP in its own shell config. The hotspot can give the Pi a new IP, so only the laptop's value changes then.
 
 ## Code updates on start
 On every (re)start `start_robot.sh` gets the latest code before it launches:
