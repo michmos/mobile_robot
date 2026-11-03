@@ -115,4 +115,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # shellcheck is preinstalled on the GitHub ubuntu runners
-      - run: shellcheck pi_setup/start_robot.sh
+      - run: shellcheck pi_setup/start_robot.sh pi_setup/robot_env.sh
