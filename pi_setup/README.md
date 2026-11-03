@@ -6,8 +6,9 @@ Files to start the robot automatically on boot. Run everything on the Pi.
 | `udev.d/99-esp32.rules` | `/etc/udev/rules.d/` | Stable `/dev/esp32` name for the ESP32 (CH340, `1a86:7523`) |
 | `start_robot.sh` | `/home/mypi/` | Updates, builds and launches the code, called from mobile_robot.service |
 | `systemd/mobile_robot.service` | `/etc/systemd/system/` | Runs `/home/mypi/start_robot.sh` on boot, restarts on failure |
-| `systemd/ros_discovery_server.service` | `/etc/systemd/system/` | Runs the Fast DDS discovery server (ID 0, port 11811) on boot |
+| `systemd/ros_discovery_server.service` | `/etc/systemd/system/` | Runs the Fast DDS discovery server (UDP port 11811) on boot |
 | `ros_env.example` | `/home/mypi/ros_env` | ROS environment shared by both services and interactive shells |
+| `robot_env.sh` | laptop, anywhere | Sourced on the laptop to reach the Pi's discovery server |
 
 ## Install
 Follow these instructions to setup the automatic on boot launch - only needs to be done once
@@ -27,12 +28,38 @@ sudo systemctl enable --now ros_discovery_server mobile_robot
 
 Add this line to the shell rc of the Pi user (`~/.zshrc` for zsh, `~/.bashrc` for bash) so interactive shells get the same variables:
 ```zsh
-set -a; . ~/ros_env; set +a
+set -a; . ~/ros_env; set +a; export ROS_SUPER_CLIENT=true
 ```
+`ROS_SUPER_CLIENT` is for shells only: without it the `ros2` CLI lists nodes but no topics. The robot's nodes don't need it.
 
 The Pi's nodes use `127.0.0.1` for the server, so `/home/mypi/ros_env` never needs editing.
 
-The laptop needs `RMW_IMPLEMENTATION`, `ROS_DOMAIN_ID` and `ROS_SUPER_CLIENT=true` (same as the Pi), and `ROS_DISCOVERY_SERVER` set to the Pi's current IP, in its own shell config. The hotspot can give the Pi a new IP, so only the laptop's value changes then.
+## Discovery from the laptop
+Multicast discovery usually fails on a phone hotspot, so all ROS processes register with the Fast DDS discovery server on the Pi. Only the laptop needs an address: the Pi's current IP (shown in the phone's hotspot settings or by `hostname -I` on the Pi).
+
+On the laptop, after sourcing ROS:
+```bash
+source pi_setup/robot_env.sh <pi-ip>
+ros2 topic list
+```
+It only changes the current shell. The laptop's firewall must accept UDP from the hotspot subnet (DDS sends data directly between the machines), e.g. `sudo ufw allow from <subnet>/24 proto udp`, or disable it while testing.
+
+Things to know:
+- The `ros2` daemon keeps the discovery settings it was started with. Run `ros2 daemon stop` after any change to the ROS variables (`robot_env.sh` does it).
+- `ros2 topic list --no-daemon` only listens for 0.5 s by default, too short with a server. Use `--spin-time 5`.
+- Fast DDS takes the machine's IP addresses when a process starts. If the Pi boots before it is on the hotspot, or the hotspot hands out a new IP (Android picks a new subnet per hotspot session), the laptop sees nothing or gets no data. Turn the hotspot on before booting the Pi, otherwise restart both services once the Pi is connected:
+  ```bash
+  sudo systemctl restart ros_discovery_server mobile_robot
+  ```
+
+### Hardware test checklist
+1. Laptop: `ping <pi-ip>` must answer, otherwise the hotspot isolates its clients. Check the firewall rule above.
+2. Pi: `journalctl -u ros_discovery_server -b` shows "Server started"; `ip -4 a show wlan0` shows the hotspot IP and the services started after it was assigned (`journalctl -b -u mobile_robot`).
+3. Pi: `ros2 daemon stop; ros2 topic list --no-daemon --spin-time 5`, then `ros2 topic list` (with daemon).
+4. Laptop: `source pi_setup/robot_env.sh <pi-ip>; ros2 topic list --no-daemon --spin-time 5; ros2 topic echo --once /<robot-topic>`. Check the other direction too: `ros2 topic pub /test std_msgs/msg/String "{data: hi}"` on the laptop, `ros2 topic echo /test std_msgs/msg/String` on the Pi.
+5. Restart the hotspot (new IP), restart both services on the Pi and repeat 1-4 with the new IP.
+
+If topics come and go, check whether the robot restarts: `systemctl show mobile_robot -p NRestarts`.
 
 ## Code updates on start
 On every (re)start `start_robot.sh` gets the latest code before it launches:
