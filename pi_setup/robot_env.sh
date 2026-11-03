@@ -5,7 +5,7 @@
 
 if [ -z "$1" ]; then
   echo "usage: source robot_env.sh <pi-ip>" >&2
-  return 1 2>/dev/null || exit 1
+  return 1
 fi
 
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
