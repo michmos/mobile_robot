@@ -37,6 +37,15 @@ WHEEL_JOINTS = {'left_wheel_joint', 'right_wheel_joint'}
 CONTROLLERS = {'joint_state_broadcaster', 'mobile_robot_controller'}
 # forward speed sent on the twist_mux input (m/s)
 LINEAR_X = 0.2
+# linear.x.max_acceleration / max_deceleration in controller_manager.yaml
+MAX_ACCELERATION = 0.3
+MAX_DECELERATION = 0.6
+# slack on the velocity bounds (m/s); message latency only delays the ramp,
+# so the bounds stay valid on a slow machine
+RAMP_TOLERANCE = 0.05
+# earlier tests can leave the robot moving: twist_mux and cmd_vel timeouts
+# (0.5 s each) plus the ramp down
+STOP_TIMEOUT = 10.0
 
 
 @pytest.mark.launch_test
@@ -69,8 +78,9 @@ class TestBringup(unittest.TestCase):
     def setUp(self):
         self.node = rclpy.create_node('test_bringup')
         self.odom = []
-        self.node.create_subscription(
-            Odometry, '/odom', self.odom.append, 10)
+        # monotonic receive time of each self.odom entry
+        self.odom_times = []
+        self.node.create_subscription(Odometry, '/odom', self.on_odom, 10)
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self.node)
         self.cmd_vel_pub = self.node.create_publisher(
@@ -83,6 +93,10 @@ class TestBringup(unittest.TestCase):
     def tearDown(self):
         self.tf_listener.unregister()
         self.node.destroy_node()
+
+    def on_odom(self, msg):
+        self.odom.append(msg)
+        self.odom_times.append(time.monotonic())
 
     def publish_cmd_vel(self):
         if self.linear_x is None:
@@ -145,6 +159,59 @@ class TestBringup(unittest.TestCase):
                 > start_x + 0.05),
             'odometry did not move forward')
         return start_x
+
+    def odom_speeds_since(self, start):
+        """(receive time, odom linear.x) of every odom received after start."""
+        return [(t, msg.twist.twist.linear.x)
+                for t, msg in zip(self.odom_times, self.odom) if t >= start]
+
+    def wait_standing_still(self):
+        self.assertTrue(self.spin_until(lambda: self.odom), 'no /odom')
+        self.assertTrue(
+            self.spin_until(
+                lambda: abs(self.latest_odom().twist.twist.linear.x) < 1e-3,
+                STOP_TIMEOUT),
+            'robot did not come to rest')
+
+    def test_cmd_vel_step_ramps_up_with_acceleration_limit(self):
+        self.wait_standing_still()
+
+        start = time.monotonic()
+        self.linear_x = LINEAR_X
+        self.assertTrue(
+            self.spin_until(lambda: math.isclose(
+                self.latest_odom().twist.twist.linear.x, LINEAR_X,
+                abs_tol=0.01)),
+            f'odom twist {self.latest_odom().twist.twist.linear.x}')
+
+        for stamp, speed in self.odom_speeds_since(start):
+            bound = MAX_ACCELERATION * (stamp - start) + RAMP_TOLERANCE
+            self.assertLessEqual(
+                speed, bound,
+                f'{speed} m/s after {stamp - start:.3f} s, limit {bound}')
+
+    def test_stop_command_ramps_down_with_deceleration_limit(self):
+        self.drive_forward()
+        self.assertTrue(
+            self.spin_until(lambda: math.isclose(
+                self.latest_odom().twist.twist.linear.x, LINEAR_X,
+                abs_tol=0.01)),
+            f'odom twist {self.latest_odom().twist.twist.linear.x}')
+
+        start = time.monotonic()
+        # an explicit zero command, not a timeout, so braking starts at once
+        self.linear_x = 0.0
+        self.assertTrue(
+            self.spin_until(
+                lambda: abs(self.latest_odom().twist.twist.linear.x) < 1e-3),
+            'robot still moving at '
+            f'{self.latest_odom().twist.twist.linear.x} m/s')
+
+        for stamp, speed in self.odom_speeds_since(start):
+            bound = LINEAR_X - MAX_DECELERATION * (stamp - start) - RAMP_TOLERANCE
+            self.assertGreaterEqual(
+                speed, bound,
+                f'{speed} m/s after {stamp - start:.3f} s, limit {bound}')
 
     def test_controllers_are_active(self):
         # setUp already waits for this, the test makes the check explicit
