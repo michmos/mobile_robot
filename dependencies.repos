@@ -5,4 +5,4 @@ repositories:
   xv_11_driver:
     type: git
     url: https://github.com/michmos/xv_11_driver.git
-    version: b5e7440901ef623d75426f5672e5bba9e021be01
+    version: 5a07f93b5d6ef0a144da9bca40bc0d1f7abdbd02
