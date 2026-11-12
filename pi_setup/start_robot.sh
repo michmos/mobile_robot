@@ -1,8 +1,8 @@
 #!/bin/bash
 # Started by mobile_robot.service. Gets the latest code of $BRANCH, rebuilds the
-# workspace when the commit changed and launches. A failed update or build only
-# logs a warning and the last installed build is launched, so the robot also
-# starts offline.
+# workspace when the commit changed, flashes the ESP32 when the firmware changed
+# and launches. A failed update, build or flash only logs a warning and the last
+# installed build is launched, so the robot also starts offline.
 
 BRANCH=main
 REPO_URL=https://github.com/michmos/mobile_robot.git
@@ -12,6 +12,13 @@ REPO=$WS/src/mobile_robot
 # commit of the last successful build, inside install/ so a removed install
 # also forces a rebuild
 BUILT_STAMP=$WS/install/.mobile_robot_commit
+# git tree hash of esp32_firmware/ last flashed, outside install/ so a removed
+# install does not force a reflash
+FLASHED_STAMP=$WS/.esp32_firmware_tree
+ESP32_PORT=/dev/esp32
+ESP32_FQBN=esp32:esp32:esp32
+# the first compile on the Pi takes several minutes
+FLASH_TIMEOUT=1200
 
 # never wait for credentials, and give up on a slow network instead of hanging
 export GIT_TERMINAL_PROMPT=0
@@ -51,9 +58,31 @@ build_ws() {
   echo "$head" > "$BUILT_STAMP"
 }
 
+flash_firmware() {
+  local tree
+  tree=$(git -C "$REPO" rev-parse HEAD:esp32_firmware) || return 1
+  if [ "$(cat "$FLASHED_STAMP" 2>/dev/null)" = "$tree" ]; then
+    echo "firmware $tree already flashed"
+    return 0
+  fi
+  if ! command -v arduino-cli > /dev/null; then
+    warn "arduino-cli not found"
+    return 1
+  fi
+  if [ ! -e "$ESP32_PORT" ]; then
+    warn "$ESP32_PORT not found"
+    return 1
+  fi
+  echo "Flashing firmware $tree to $ESP32_PORT"
+  timeout "$FLASH_TIMEOUT" arduino-cli compile --upload -p "$ESP32_PORT" \
+    --fqbn "$ESP32_FQBN" "$REPO/esp32_firmware" || return 1
+  echo "$tree" > "$FLASHED_STAMP"
+}
+
 update_repo || warn "updating $REPO failed, using the current checkout"
 if [ -d "$REPO/.git" ]; then
   build_ws || warn "build failed, launching the last installed build"
+  flash_firmware || warn "flashing the ESP32 failed, launching with the current firmware"
 fi
 
 # the setup file only exists on the Pi, nothing for shellcheck to follow
