@@ -2,10 +2,14 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction, Shutdown
-from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration
+from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
+                            OpaqueFunction, Shutdown)
+from launch.conditions import IfCondition, UnlessCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import (EnvironmentVariable, EqualsSubstitution,
+                                  LaunchConfiguration)
 from launch_ros.actions import Node
+from mobile_robot.map_storage import DEFAULT_MAP_DIR, MAP_DIR_ENV
 from mobile_robot.urdf_kinematics import write_kinematics_params
 import xacro
 
@@ -25,6 +29,26 @@ def generate_launch_description():
             'use_foxglove',
             default_value='true',
             description='Start foxglove_bridge'),
+        DeclareLaunchArgument(
+            'slam',
+            default_value='off',
+            choices=['off', 'mapping', 'localization'],
+            description='Start slam_toolbox (slam_launch.py) in this mode'),
+        DeclareLaunchArgument(
+            'map',
+            default_value='',
+            description='Map name for slam: saved to (mapping) or loaded '
+                        'from (localization)'),
+        DeclareLaunchArgument(
+            'map_dir',
+            default_value=EnvironmentVariable(
+                MAP_DIR_ENV, default_value=DEFAULT_MAP_DIR),
+            description=f'Directory holding the maps, '
+                        f'${MAP_DIR_ENV} or {DEFAULT_MAP_DIR} by default'),
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='false',
+            description='Use sim time in slam_toolbox if true'),
         # the robot description is expanded in Python (the controller
         # kinematics are derived from it), so it needs the resolved value
         OpaqueFunction(function=launch_setup),
@@ -51,6 +75,10 @@ def launch_setup(context):
     twist_mux_config = os.path.join(
         get_package_share_directory('mobile_robot'),
         'config', 'twist_mux.yaml')
+
+    slam_launch = os.path.join(
+        get_package_share_directory('mobile_robot'),
+        'launch', 'slam_launch.py')
 
     return [
         Node(
@@ -110,5 +138,16 @@ def launch_setup(context):
             executable='foxglove_bridge',
             output='screen',
             condition=IfCondition(LaunchConfiguration('use_foxglove')),
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(slam_launch),
+            launch_arguments={
+                'mode': LaunchConfiguration('slam'),
+                'map': LaunchConfiguration('map'),
+                'map_dir': LaunchConfiguration('map_dir'),
+                'use_sim_time': LaunchConfiguration('use_sim_time'),
+            }.items(),
+            condition=UnlessCondition(
+                EqualsSubstitution(LaunchConfiguration('slam'), 'off')),
         ),
     ]

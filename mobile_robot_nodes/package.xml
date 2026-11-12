@@ -36,6 +36,8 @@
   <test_depend>sensor_msgs</test_depend>
   <test_depend>std_msgs</test_depend>
   <test_depend>tf2_ros</test_depend>
+  <!-- test_slam.launch.py runs slam_launch.py with a fake scan -->
+  <test_depend>slam_toolbox</test_depend>
 
   <!-- mobile_robot_launch.py: brings up controller_manager against
        MobileRobotHardware (or mock_components/GenericSystem from
@@ -62,6 +64,9 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>rcl_interfaces</exec_depend>
+  <!-- slam_launch.py and the save_map script -->
+  <exec_depend>slam_toolbox</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

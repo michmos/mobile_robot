@@ -6,6 +6,7 @@ import tempfile
 
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch_ros.actions import Node
 import pytest
 
 PACKAGE_DIR = os.path.join(
@@ -15,6 +16,7 @@ LAUNCH_FILE = os.path.join(PACKAGE_DIR, 'launch', 'mobile_robot_launch.py')
 
 @pytest.fixture
 def launch_module(tmp_path, monkeypatch):
+    monkeypatch.delenv('MAP_DIR', raising=False)
     spec = importlib.util.spec_from_file_location('mobile_robot_launch',
                                                   LAUNCH_FILE)
     module = importlib.util.module_from_spec(spec)
@@ -43,7 +45,8 @@ def launch_nodes(launch_module, **configurations):
                  .entities if isinstance(a, OpaqueFunction))
     nodes = setup.execute(context)
     return {n.node_executable: n for n in nodes
-            if n.condition is None or n.condition.evaluate(context)}
+            if isinstance(n, Node)
+            and (n.condition is None or n.condition.evaluate(context))}
 
 
 def test_defaults_keep_robot_behavior(launch_module):
@@ -51,6 +54,10 @@ def test_defaults_keep_robot_behavior(launch_module):
         'use_mock_hardware': 'false',
         'use_lidar': 'true',
         'use_foxglove': 'true',
+        'slam': 'off',
+        'map': '',
+        'map_dir': '~/maps',
+        'use_sim_time': 'false',
     }
 
 

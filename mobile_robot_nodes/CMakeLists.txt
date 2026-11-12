@@ -15,10 +15,12 @@ ament_python_install_package(${PROJECT_NAME})
 
 # hardware_watchdog exits when a hardware component leaves 'active', see
 # mobile_robot/hardware_watchdog.py. wheel_tuning runs feedforward / PI
-# tuning, see mobile_robot/wheel_tuning.py
+# tuning, see mobile_robot/wheel_tuning.py. save_map saves the slam_toolbox
+# map, see mobile_robot/save_map.py
 install(PROGRAMS
   scripts/hardware_watchdog
   scripts/wheel_tuning
+  scripts/save_map
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -66,9 +68,15 @@ if(BUILD_TESTING)
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
   ament_add_pytest_test(test_robot_description test/test_robot_description.py)
+  ament_add_pytest_test(test_map_storage test/test_map_storage.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
   # Only builds the launch description, starts no node.
   ament_add_pytest_test(test_mobile_robot_launch
     test/test_mobile_robot_launch.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  ament_add_pytest_test(test_slam_launch test/test_slam_launch.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
 
@@ -89,6 +97,14 @@ if(BUILD_TESTING)
   # own once the hardware component is deactivated (what systemd sees).
   add_launch_test(test/test_hardware_watchdog.launch.py
     TARGET test_hardware_watchdog_launch
+    TIMEOUT 90
+    RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py"
+    ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+  )
+  # slam_launch.py mode:=mapping on its own with a fake /scan and static TF,
+  # then save_map against the running slam_toolbox.
+  add_launch_test(test/test_slam.launch.py
+    TARGET test_slam_launch_mapping
     TIMEOUT 90
     RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py"
     ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
