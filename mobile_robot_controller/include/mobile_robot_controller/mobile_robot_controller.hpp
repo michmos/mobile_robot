@@ -62,9 +62,8 @@ private:
     double angularVelocity = 0.0;
   } twist_;
 
-  // last acceleration limited command, start of the next limited step in
-  // update()
-  Twist limitedTwist_;
+  // start of the next acceleration limited step in update()
+  Twist lastLimitedCmdVel_;
 
   enum JointSides { LEFT = 0, RIGHT = 1 };
 

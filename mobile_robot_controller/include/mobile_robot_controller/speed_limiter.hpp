@@ -7,18 +7,18 @@
 namespace mobile_robot_controller {
 
 // moves `previous` (last limited command) towards `target` by at most
-// limit * dt, with limit = maxAcceleration while |v| grows and
+// limit * dt_s, with limit = maxAcceleration while |v| grows and
 // maxDeceleration while |v| shrinks
 // - reaches `target` exactly once it is within one step
 // - a sign change of `target` relative to `previous` brakes towards 0 first:
 //   a step never crosses 0, it ends at exactly 0 instead
 // - a NaN limit means no limit in that direction; with both limits NaN the
 //   result is `target`
-// - dt <= 0 leaves `previous` unchanged in limited directions
-// limits in m/s^2 or rad/s^2, dt in s
+// - dt_s <= 0 leaves `previous` unchanged in limited directions
+// limits in m/s^2 or rad/s^2, dt_s in s
 // @return: the limited velocity
 double limitVelocity(double previous, double target, double maxAcceleration,
-                     double maxDeceleration, double dt);
+                     double maxDeceleration, double dt_s);
 
 } // namespace mobile_robot_controller
 

@@ -172,7 +172,7 @@ MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
   // the buffer's content as a new command
   lastCmdVel_.reset();
   // ramps after reactivation start from standstill
-  limitedTwist_ = {};
+  lastLimitedCmdVel_ = {};
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -223,23 +223,25 @@ MobileRobotController::update(const rclcpp::Time &time,
     angularVel = lastCmdVel_->twist.angular.z;
   }
 
-  const double dt = period.seconds();
-  limitedTwist_.linearVelocity = limitVelocity(
-      limitedTwist_.linearVelocity, linearVel, linearLimits_.maxAcceleration,
-      linearLimits_.maxDeceleration, dt);
-  limitedTwist_.angularVelocity = limitVelocity(
-      limitedTwist_.angularVelocity, angularVel, angularLimits_.maxAcceleration,
-      angularLimits_.maxDeceleration, dt);
+  const double dt_s = period.seconds();
+  linearVel = limitVelocity(lastLimitedCmdVel_.linearVelocity, linearVel,
+                            linearLimits_.maxAcceleration,
+                            linearLimits_.maxDeceleration, dt_s);
+  angularVel = limitVelocity(lastLimitedCmdVel_.angularVelocity, angularVel,
+                             angularLimits_.maxAcceleration,
+                             angularLimits_.maxDeceleration, dt_s);
 
-  auto cmds = inverseKinematics(limitedTwist_.linearVelocity,
-                                limitedTwist_.angularVelocity, wheelSeparation_,
-                                wheelRadius_);
+  auto cmds =
+      inverseKinematics(linearVel, angularVel, wheelSeparation_, wheelRadius_);
   if (!command_interfaces_[LEFT].set_value(cmds.first) ||
       !command_interfaces_[RIGHT].set_value(cmds.second)) {
     RCLCPP_ERROR(get_node()->get_logger(),
                  "update(): failed to write velocity command");
     return controller_interface::return_type::ERROR;
   }
+
+  lastLimitedCmdVel_.linearVelocity = linearVel;
+  lastLimitedCmdVel_.angularVelocity = angularVel;
 
   return controller_interface::return_type::OK;
 }
