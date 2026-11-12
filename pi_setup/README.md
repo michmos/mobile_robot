@@ -26,14 +26,16 @@ sudo systemctl enable --now mobile_robot
 On every (re)start `start_robot.sh` gets the latest code before it launches:
 - No `/home/mypi/robot_ws/src/mobile_robot`: clones the `dev` branch from GitHub.
 - Otherwise: fetches `dev` and checks out `origin/dev`. Uncommitted changes in the checkout are left alone, the update is skipped with a warning.
-- Runs `colcon build --parallel-workers 1` in `/home/mypi/robot_ws` only when the checked out commit differs from the last successful build (stored in `install/.mobile_robot_commit`) or no install exists.
+- Gets the source dependencies (`xv_11_driver`) at the commits pinned in `dependencies.repos` with `vcs import`, next to `mobile_robot` in `src/`.
+- Runs `colcon build --parallel-workers 1` in `/home/mypi/robot_ws` only when the commit of a repo in `src/` differs from the last successful build (stored in `install/.src_commits`) or no install exists.
 - Offline, a git timeout (60 s) or a failed build only log a `WARNING` (`journalctl -u mobile_robot`) and the last installed build is launched. A failed build is retried on the next start.
 
 The branch is `BRANCH=dev` at the top of the script, switch it to `main` once `main` is stable.
 
 ## Prerequisites
 - `/home/mypi/start_robot.sh` exists, is executable and ends with `exec ros2 launch ...` so signals reach the launch
-- ROS 2 kilted (`/opt/ros/kilted`), `git` and `colcon` are installed, the build dependencies are installed (rosdep)
+- ROS 2 kilted (`/opt/ros/kilted`), `git`, `colcon` and `vcs` (`python3-vcstool`) are installed, the build dependencies are installed (rosdep)
+- `src/xv_11_driver` is missing or a clone of `michmos/xv_11_driver`: `vcs import` refuses to touch a clone of another URL (e.g. upstream `mjstn/xv_11_driver`), move it out of `src/` once
 - user `mypi` is in the `dialout` group
 - `serial_port` in `mobile_robot_nodes/description/ros2_control.xacro` is `/dev/esp32`
 

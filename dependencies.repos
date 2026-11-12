@@ -1,0 +1,8 @@
+# Source dependencies built next to this repo in ros2_ws/src:
+#   vcs import --input src/mobile_robot/dependencies.repos src
+repositories:
+  # fork of mjstn/xv_11_driver: builds on kilted, scan timing fixes (#85)
+  xv_11_driver:
+    type: git
+    url: https://github.com/michmos/xv_11_driver.git
+    version: b5e7440901ef623d75426f5672e5bba9e021be01

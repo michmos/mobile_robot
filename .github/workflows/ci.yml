@@ -48,18 +48,10 @@ jobs:
         with:
           path: ros2_ws/src/mobile_robot
 
-      # launch dependency (exec_depend of mobile_robot), pinned for reproducible runs
-      - name: Checkout xv_11_driver
-        uses: actions/checkout@v4
-        with:
-          repository: mjstn/xv_11_driver
-          ref: 82cce0fcb54f9edc61fe365df95f97aaf7bdc8c0
-          path: ros2_ws/src/xv_11_driver
-
-      # upstream calls declare_parameter(name) without a default, an overload
-      # rclcpp no longer has on kilted. Same change as in the maintainer's checkout.
-      - name: Patch xv_11_driver for kilted
-        run: git -C src/xv_11_driver apply "$PWD/src/mobile_robot/.github/patches/xv_11_driver-kilted.patch"
+      # source dependencies pinned in dependencies.repos (xv_11_driver, exec_depend
+      # of mobile_robot): building them checks that the pinned versions still build
+      - name: Import source dependencies
+        run: vcs import --input src/mobile_robot/dependencies.repos src
 
       - name: Build
         run: |

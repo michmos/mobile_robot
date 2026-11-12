@@ -101,7 +101,10 @@ def launch_setup(context):
         Node(
             package='xv_11_driver',
             executable='xv_11_driver',
-            parameters=[{'frame_id': 'lidar', 'port': '/dev/ttyAMA0'}],
+            # slam_toolbox places a whole scan at its stamp, the middle of
+            # the ~0.2 s rotation fits best
+            parameters=[{'frame_id': 'lidar', 'port': '/dev/ttyAMA0',
+                         'stamp_mid_scan': True}],
             output='screen',
             condition=IfCondition(LaunchConfiguration('use_lidar')),
         ),
