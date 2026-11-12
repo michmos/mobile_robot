@@ -35,6 +35,15 @@ private:
   // update(), read from ROS params in on_configure()
   double cmdVelTimeout_ = 0.0;
 
+  // acceleration limits (m/s^2, rad/s^2), NaN = no limit, read from ROS
+  // params in on_configure()
+  struct AccelerationLimits {
+    double maxAcceleration = 0.0;
+    double maxDeceleration = 0.0;
+  };
+  AccelerationLimits linearLimits_;
+  AccelerationLimits angularLimits_;
+
   struct Variances {
     double positionPerMeter = 0.0;
     double yawPerRadian = 0.0;
@@ -52,6 +61,9 @@ private:
     double linearVelocity = 0.0;
     double angularVelocity = 0.0;
   } twist_;
+
+  // start of the next acceleration limited step in update()
+  Twist lastLimitedCmdVel_;
 
   enum JointSides { LEFT = 0, RIGHT = 1 };
 
@@ -107,7 +119,7 @@ public:
   on_configure(const rclcpp_lifecycle::State &previous_state) override;
 
   // lifecycle: INACTIVE -> ACTIVE
-  // - reset pose and command buffer to a known state
+  // - reset pose, command buffer and limited command to a known state
   controller_interface::CallbackReturn
   on_activate(const rclcpp_lifecycle::State &previous_state) override;
 
@@ -119,7 +131,8 @@ public:
   // realtime loop, called by the controller manager
   // - read wheel position state interfaces, update odometry
   // - read last cmd_vel, write wheel velocity command interfaces (zero
-  //   velocity if the last cmd_vel is older than cmd_vel_timeout)
+  //   velocity if the last cmd_vel is older than cmd_vel_timeout), limited
+  //   by the acceleration/deceleration limits
   controller_interface::return_type
   update(const rclcpp::Time &time, const rclcpp::Duration &period) override;
 

@@ -32,6 +32,18 @@ mobile_robot_controller:
     # (twist_mux stops forwarding a timed-out input instead of sending zero)
     cmd_vel_timeout: 0.5
 
+    # rate limits of the commanded twist (m/s^2 / rad/s^2), deceleration =
+    # |v| decreasing; smooths cmd_vel steps so the caster can align (#83).
+    # test_bringup.launch.py relies on these values
+    linear:
+      x:
+        max_acceleration: 0.3
+        max_deceleration: 0.6
+    angular:
+      z:
+        max_acceleration: 2.0
+        max_deceleration: 4.0
+
     # velocity variance ((m/s)^2 / (rad/s)^2), estimated from the hardware's
     # own encoder resolution and control rate
     linear_velocity_variance: 0.0003

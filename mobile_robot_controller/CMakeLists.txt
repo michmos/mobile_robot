@@ -23,6 +23,7 @@ find_package(tf2 REQUIRED)
 add_library(${PROJECT_NAME} SHARED
   src/mobile_robot_controller.cpp
   src/kinematics.cpp
+  src/speed_limiter.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -88,6 +89,9 @@ if(BUILD_TESTING)
   ament_add_gtest(test_kinematics test/test_kinematics.cpp)
   target_link_libraries(test_kinematics ${PROJECT_NAME})
 
+  ament_add_gtest(test_speed_limiter test/test_speed_limiter.cpp)
+  target_link_libraries(test_speed_limiter ${PROJECT_NAME})
+
   find_package(ament_cmake_gmock REQUIRED)
   find_package(ament_cmake_ros REQUIRED)
   find_package(controller_manager REQUIRED)
@@ -112,6 +116,12 @@ if(BUILD_TESTING)
 
   ament_add_ros_isolated_gtest(test_cmd_vel_timeout test/test_cmd_vel_timeout.cpp)
   target_link_libraries(test_cmd_vel_timeout
+    ${PROJECT_NAME}
+    ${lifecycle_msgs_TARGETS}
+  )
+
+  ament_add_ros_isolated_gtest(test_acceleration_limits test/test_acceleration_limits.cpp)
+  target_link_libraries(test_acceleration_limits
     ${PROJECT_NAME}
     ${lifecycle_msgs_TARGETS}
   )

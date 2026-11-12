@@ -1,11 +1,14 @@
 #include "mobile_robot_controller/mobile_robot_controller.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "mobile_robot_controller/kinematics.hpp"
+#include "mobile_robot_controller/speed_limiter.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "tf2_msgs/msg/tf_message.hpp"
 
+#include <cmath>
 #include <controller_interface/controller_interface_base.hpp>
 #include <hardware_interface/types/hardware_interface_type_values.hpp>
+#include <limits>
 #include <memory>
 #include <pluginlib/class_list_macros.hpp>
 #include <realtime_tools/realtime_publisher.hpp>
@@ -26,6 +29,16 @@ controller_interface::CallbackReturn MobileRobotController::on_init() {
     get_node()->declare_parameter<double>("angular_velocity_variance", 0.0);
     // same default as diff_drive_controller
     get_node()->declare_parameter<double>("cmd_vel_timeout", 0.5);
+    // NaN = no limit, like diff_drive_controller
+    constexpr double kNoLimit = std::numeric_limits<double>::quiet_NaN();
+    get_node()->declare_parameter<double>("linear.x.max_acceleration",
+                                          kNoLimit);
+    get_node()->declare_parameter<double>("linear.x.max_deceleration",
+                                          kNoLimit);
+    get_node()->declare_parameter<double>("angular.z.max_acceleration",
+                                          kNoLimit);
+    get_node()->declare_parameter<double>("angular.z.max_deceleration",
+                                          kNoLimit);
   } catch (const std::exception &e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s",
                  e.what());
@@ -77,6 +90,14 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
   variances_.angularVelocity =
       get_node()->get_parameter("angular_velocity_variance").as_double();
   cmdVelTimeout_ = get_node()->get_parameter("cmd_vel_timeout").as_double();
+  linearLimits_.maxAcceleration =
+      get_node()->get_parameter("linear.x.max_acceleration").as_double();
+  linearLimits_.maxDeceleration =
+      get_node()->get_parameter("linear.x.max_deceleration").as_double();
+  angularLimits_.maxAcceleration =
+      get_node()->get_parameter("angular.z.max_acceleration").as_double();
+  angularLimits_.maxDeceleration =
+      get_node()->get_parameter("angular.z.max_deceleration").as_double();
 
   // validate params
   if (leftWheelJointName_.empty() || rightWheelJointName_.empty()) {
@@ -102,6 +123,16 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
   // (if read as "disabled") let it drive on forever when commands stop
   if (cmdVelTimeout_ <= 0.0) {
     RCLCPP_ERROR(get_node()->get_logger(), "cmd_vel_timeout must be > 0");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  // NaN compares false, so unset limits pass
+  if (linearLimits_.maxAcceleration < 0.0 ||
+      linearLimits_.maxDeceleration < 0.0 ||
+      angularLimits_.maxAcceleration < 0.0 ||
+      angularLimits_.maxDeceleration < 0.0) {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "linear.x/angular.z max_acceleration/max_deceleration must "
+                 "be >= 0 (or NaN for no limit)");
     return controller_interface::CallbackReturn::ERROR;
   }
 
@@ -140,6 +171,8 @@ MobileRobotController::on_activate(const rclcpp_lifecycle::State &) {
   // forget the command seen before deactivation, the first update() takes
   // the buffer's content as a new command
   lastCmdVel_.reset();
+  // ramps after reactivation start from standstill
+  lastLimitedCmdVel_ = {};
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -190,6 +223,14 @@ MobileRobotController::update(const rclcpp::Time &time,
     angularVel = lastCmdVel_->twist.angular.z;
   }
 
+  const double dt_s = period.seconds();
+  linearVel = limitVelocity(lastLimitedCmdVel_.linearVelocity, linearVel,
+                            linearLimits_.maxAcceleration,
+                            linearLimits_.maxDeceleration, dt_s);
+  angularVel = limitVelocity(lastLimitedCmdVel_.angularVelocity, angularVel,
+                             angularLimits_.maxAcceleration,
+                             angularLimits_.maxDeceleration, dt_s);
+
   auto cmds =
       inverseKinematics(linearVel, angularVel, wheelSeparation_, wheelRadius_);
   if (!command_interfaces_[LEFT].set_value(cmds.first) ||
@@ -198,6 +239,9 @@ MobileRobotController::update(const rclcpp::Time &time,
                  "update(): failed to write velocity command");
     return controller_interface::return_type::ERROR;
   }
+
+  lastLimitedCmdVel_.linearVelocity = linearVel;
+  lastLimitedCmdVel_.angularVelocity = angularVel;
 
   return controller_interface::return_type::OK;
 }
