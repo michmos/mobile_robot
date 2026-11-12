@@ -5,6 +5,12 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# GCC on ARM notes a C++17 ABI change from GCC 10.1 for std::pair arguments and
+# return values; everything is built with one compiler, so it doesn't apply
+if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm")
+  add_compile_options(-Wno-psabi)
+endif()
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # find dependencies

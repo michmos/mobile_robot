@@ -65,7 +65,7 @@ build_ws() {
   # One package at a time, the Pi has little memory.
   (
     # shellcheck source=/dev/null
-    source "$ROS_SETUP" && cd "$WS" && colcon build --parallel-workers 1
+    source "$ROS_SETUP" && cd "$WS" && colcon build --parallel-workers 1 --cmake-args -DBUILD_TESTING=OFF
   ) || return 1
   echo "$commits" > "$BUILT_STAMP"
 }
