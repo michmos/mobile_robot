@@ -21,6 +21,9 @@ slam_toolbox:
     minimum_travel_distance: 0.2
     minimum_travel_heading: 0.2
 
+    # confidence required to mark a cell as occupied
+    occupancy_threshold: 0.3
+
     # redraw /map every 5 s (default 10 s), cheap for a room-sized map
     map_update_interval: 5.0
     # map -> odom at 20 Hz (default), plenty for 5 Hz scans; upstream's
