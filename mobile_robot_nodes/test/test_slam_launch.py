@@ -15,6 +15,7 @@ from launch.utilities import perform_substitutions
 from launch_ros.actions import LifecycleNode, Node
 from launch_ros.utilities import evaluate_parameters
 import pytest
+import yaml
 
 PACKAGE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), os.pardir)
@@ -239,3 +240,57 @@ def test_robot_launch_slam_includes_slam_launch(robot_launch, slam):
 def test_robot_launch_unknown_slam_mode_is_rejected(robot_launch):
     with pytest.raises(Exception, match='not valid'):
         run(robot_launch, slam='on')
+
+
+# mobile_robot_launch.py velocity limits in mapping mode
+
+VELOCITY_LIMITS = ('linear.x.max_velocity', 'angular.z.max_velocity')
+
+
+def flatten(parameters, prefix=''):
+    """Nested YAML parameters as {'a.b.c': value}."""
+    flat = {}
+    for key, value in parameters.items():
+        if isinstance(value, dict):
+            flat.update(flatten(value, f'{prefix}{key}.'))
+        else:
+            flat[f'{prefix}{key}'] = value
+    return flat
+
+
+def controller_parameters(context, actions):
+    """
+    Parameters mobile_robot_controller gets from ros2_control_node's files.
+
+    Merged in file order, later files override earlier ones.
+    """
+    node = next(a for a in actions if isinstance(a, Node)
+                and a.node_executable == 'ros2_control_node')
+    merged = {}
+    for file in node_parameters(context, node)[0]:
+        with open(file) as f:
+            content = yaml.safe_load(f) or {}
+        for name in ('mobile_robot_controller', '/mobile_robot_controller'):
+            merged.update(flatten(
+                content.get(name, {}).get('ros__parameters', {})))
+    return merged
+
+
+def test_robot_launch_slam_mapping_limits_controller_velocity(robot_launch):
+    context, actions = run(robot_launch, slam='mapping')
+    parameters = controller_parameters(context, actions)
+
+    assert parameters['linear.x.max_velocity'] == pytest.approx(0.15)
+    assert parameters['angular.z.max_velocity'] == pytest.approx(0.4)
+
+
+@pytest.mark.parametrize('slam', ['off', 'localization'])
+def test_robot_launch_slam_without_mapping_keeps_velocity_unlimited(
+        robot_launch, slam):
+    context, actions = run(robot_launch, slam=slam, map='kitchen')
+    parameters = controller_parameters(context, actions)
+
+    assert not [k for k in VELOCITY_LIMITS if k in parameters]
+    # the other controller parameters still reach the controller
+    assert 'wheel_separation' in parameters
+    assert 'linear.x.max_acceleration' in parameters

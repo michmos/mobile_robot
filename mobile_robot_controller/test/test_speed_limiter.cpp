@@ -6,6 +6,7 @@
 #include <limits>
 #include <vector>
 
+using mobile_robot_controller::clampVelocity;
 using mobile_robot_controller::limitVelocity;
 
 namespace {
@@ -226,4 +227,47 @@ TEST(SpeedLimiter, NaNDecelerationOnlyUnlimitsSlowingDown) {
   EXPECT_DOUBLE_EQ(limitVelocity(-0.15, -0.05, k_accel, k_nan, k_dt_s), -0.05);
   EXPECT_NEAR(limitVelocity(0.0, 0.15, k_accel, k_nan, k_dt_s), k_accelStep,
               k_tolerance);
+}
+
+// ---------------------------------------------------------------------------
+// velocity limit
+// ---------------------------------------------------------------------------
+
+TEST(SpeedLimiter, VelocityAboveLimitIsClampedToMax) {
+  EXPECT_DOUBLE_EQ(clampVelocity(0.3, 0.15), 0.15);
+  EXPECT_DOUBLE_EQ(clampVelocity(-0.3, 0.15), -0.15);
+  EXPECT_DOUBLE_EQ(clampVelocity(1.6, 0.4), 0.4);
+  EXPECT_DOUBLE_EQ(clampVelocity(-1.6, 0.4), -0.4);
+}
+
+TEST(SpeedLimiter, VelocityWithinLimitPassesThrough) {
+  EXPECT_DOUBLE_EQ(clampVelocity(0.1, 0.15), 0.1);
+  EXPECT_DOUBLE_EQ(clampVelocity(-0.1, 0.15), -0.1);
+  EXPECT_DOUBLE_EQ(clampVelocity(0.0, 0.15), 0.0);
+  EXPECT_DOUBLE_EQ(clampVelocity(0.15, 0.15), 0.15);
+  EXPECT_DOUBLE_EQ(clampVelocity(-0.15, 0.15), -0.15);
+}
+
+TEST(SpeedLimiter, ZeroVelocityLimitStops) {
+  EXPECT_DOUBLE_EQ(clampVelocity(0.3, 0.0), 0.0);
+  EXPECT_DOUBLE_EQ(clampVelocity(-0.3, 0.0), 0.0);
+}
+
+TEST(SpeedLimiter, NaNVelocityLimitMeansNoLimit) {
+  EXPECT_DOUBLE_EQ(clampVelocity(5.0, k_nan), 5.0);
+  EXPECT_DOUBLE_EQ(clampVelocity(-5.0, k_nan), -5.0);
+  EXPECT_DOUBLE_EQ(clampVelocity(0.0, k_nan), 0.0);
+}
+
+// the controller clamps the target before the ramp: 0 -> 0.3 limited to
+// 0.15 ramps like a step to 0.15 and holds there
+TEST(SpeedLimiter, AccelerationRampStopsAtVelocityLimit) {
+  const auto expected = ramp(0.0, 0.15, 30);
+  double v = 0.0;
+  for (int i = 0; i < 30; ++i) {
+    v = limitVelocity(v, clampVelocity(0.3, 0.15), k_accel, k_decel, k_dt_s);
+    EXPECT_DOUBLE_EQ(v, expected[i]) << "step " << i + 1;
+    EXPECT_LE(v, 0.15) << "step " << i + 1;
+  }
+  EXPECT_DOUBLE_EQ(v, 0.15);
 }
