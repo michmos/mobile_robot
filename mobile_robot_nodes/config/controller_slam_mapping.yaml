@@ -1,0 +1,13 @@
+# mobile_robot_controller overrides for mobile_robot_launch.py slam:=mapping,
+# loaded after controller_manager.yaml.
+# slam_toolbox places a whole scan at the odometry pose of its stamp, so
+# turning during the ~0.2 s XV-11 rotation misplaces the late rays (#87).
+# Values to be confirmed on the robot.
+mobile_robot_controller:
+  ros__parameters:
+    linear:
+      x:
+        max_velocity: 0.15
+    angular:
+      z:
+        max_velocity: 0.4

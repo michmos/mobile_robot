@@ -44,6 +44,11 @@ private:
   AccelerationLimits linearLimits_;
   AccelerationLimits angularLimits_;
 
+  // velocity limits (m/s, rad/s), NaN = no limit, read from ROS params in
+  // on_configure()
+  double maxLinearVelocity_ = 0.0;
+  double maxAngularVelocity_ = 0.0;
+
   struct Variances {
     double positionPerMeter = 0.0;
     double yawPerRadian = 0.0;
@@ -131,8 +136,9 @@ public:
   // realtime loop, called by the controller manager
   // - read wheel position state interfaces, update odometry
   // - read last cmd_vel, write wheel velocity command interfaces (zero
-  //   velocity if the last cmd_vel is older than cmd_vel_timeout), limited
-  //   by the acceleration/deceleration limits
+  //   velocity if the last cmd_vel is older than cmd_vel_timeout), clamped
+  //   to the velocity limits and limited by the acceleration/deceleration
+  //   limits
   controller_interface::return_type
   update(const rclcpp::Time &time, const rclcpp::Duration &period) override;
 

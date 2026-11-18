@@ -39,6 +39,8 @@ controller_interface::CallbackReturn MobileRobotController::on_init() {
                                           kNoLimit);
     get_node()->declare_parameter<double>("angular.z.max_deceleration",
                                           kNoLimit);
+    get_node()->declare_parameter<double>("linear.x.max_velocity", kNoLimit);
+    get_node()->declare_parameter<double>("angular.z.max_velocity", kNoLimit);
   } catch (const std::exception &e) {
     RCLCPP_ERROR(get_node()->get_logger(), "Failed to declare parameters: %s",
                  e.what());
@@ -98,6 +100,10 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
       get_node()->get_parameter("angular.z.max_acceleration").as_double();
   angularLimits_.maxDeceleration =
       get_node()->get_parameter("angular.z.max_deceleration").as_double();
+  maxLinearVelocity_ =
+      get_node()->get_parameter("linear.x.max_velocity").as_double();
+  maxAngularVelocity_ =
+      get_node()->get_parameter("angular.z.max_velocity").as_double();
 
   // validate params
   if (leftWheelJointName_.empty() || rightWheelJointName_.empty()) {
@@ -133,6 +139,12 @@ MobileRobotController::on_configure(const rclcpp_lifecycle::State &) {
     RCLCPP_ERROR(get_node()->get_logger(),
                  "linear.x/angular.z max_acceleration/max_deceleration must "
                  "be >= 0 (or NaN for no limit)");
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  if (maxLinearVelocity_ < 0.0 || maxAngularVelocity_ < 0.0) {
+    RCLCPP_ERROR(get_node()->get_logger(),
+                 "linear.x/angular.z max_velocity must be >= 0 (or NaN for "
+                 "no limit)");
     return controller_interface::CallbackReturn::ERROR;
   }
 
@@ -222,6 +234,9 @@ MobileRobotController::update(const rclcpp::Time &time,
     linearVel = lastCmdVel_->twist.linear.x;
     angularVel = lastCmdVel_->twist.angular.z;
   }
+
+  linearVel = clampVelocity(linearVel, maxLinearVelocity_);
+  angularVel = clampVelocity(angularVel, maxAngularVelocity_);
 
   const double dt_s = period.seconds();
   linearVel = limitVelocity(lastLimitedCmdVel_.linearVelocity, linearVel,
