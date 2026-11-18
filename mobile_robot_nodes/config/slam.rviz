@@ -44,6 +44,16 @@ Visualization Manager:
       Show Arrows: false
       Show Names: true
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: PoseGraph
+      Enabled: false
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /slam_toolbox/graph_visualization
+      Value: true
     - Class: rviz_default_plugins/LaserScan
       Name: LaserScan
       Enabled: true
