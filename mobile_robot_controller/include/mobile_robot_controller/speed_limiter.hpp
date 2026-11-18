@@ -1,8 +1,8 @@
 #ifndef MOBILE_ROBOT_CONTROLLER_SPEED_LIMITER_HPP
 #define MOBILE_ROBOT_CONTROLLER_SPEED_LIMITER_HPP
 
-// acceleration limiting of commanded velocities, kept free of ROS state so it
-// can be unit tested
+// velocity and acceleration limiting of commanded velocities, kept free of ROS
+// state so it can be unit tested
 
 namespace mobile_robot_controller {
 
@@ -19,6 +19,13 @@ namespace mobile_robot_controller {
 // @return: the limited velocity
 double limitVelocity(double previous, double target, double maxAcceleration,
                      double maxDeceleration, double dt_s);
+
+// clamps `v` to [-maxVelocity, maxVelocity], symmetric for both directions
+// - a NaN limit means no limit, the result is `v`
+// - applied to the target before limitVelocity(), so a ramp ends at the limit
+// maxVelocity >= 0 in m/s or rad/s
+// @return: the clamped velocity
+double clampVelocity(double v, double maxVelocity);
 
 } // namespace mobile_robot_controller
 

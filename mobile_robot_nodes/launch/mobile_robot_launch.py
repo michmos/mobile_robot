@@ -72,6 +72,14 @@ def launch_setup(context):
         get_package_share_directory('mobile_robot'),
         'config', 'controller_manager.yaml')
 
+    controller_parameters = [robot_description, controller_manager_config,
+                             kinematics_config]
+    if LaunchConfiguration('slam').perform(context) == 'mapping':
+        # lower velocity limits, slam_toolbox doesn't deskew scans
+        controller_parameters.append(os.path.join(
+            get_package_share_directory('mobile_robot'),
+            'config', 'controller_slam_mapping.yaml'))
+
     twist_mux_config = os.path.join(
         get_package_share_directory('mobile_robot'),
         'config', 'twist_mux.yaml')
@@ -90,8 +98,7 @@ def launch_setup(context):
         Node(
             package='controller_manager',
             executable='ros2_control_node',
-            parameters=[robot_description, controller_manager_config,
-                        kinematics_config],
+            parameters=controller_parameters,
             output='both',
             on_exit=Shutdown(reason='ros2_control_node exited'),
         ),
