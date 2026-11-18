@@ -286,7 +286,8 @@ def test_hardware_param_list_matches_parse_params():
 # YAML configs
 
 @pytest.mark.parametrize('name', [
-    'controller_manager.yaml', 'twist_mux.yaml', 'joystick.yaml'])
+    'controller_manager.yaml', 'twist_mux.yaml', 'joystick.yaml',
+    'slam_mapping.yaml', 'slam_localization.yaml'])
 def test_yaml_config_loads(name):
     config = load_yaml(name)
 
@@ -338,6 +339,52 @@ def test_twist_mux_and_teleop_agree_on_stamped_twist():
     teleop = load_yaml('joystick.yaml')['teleop_node']['ros__parameters']
 
     assert twist_mux['use_stamped'] == teleop['publish_stamped_twist']
+
+
+SLAM_CONFIGS = {'mapping': 'slam_mapping.yaml',
+                'localization': 'slam_localization.yaml'}
+# must agree between mapping and localization, a map is only usable with
+# the frames and resolution it was built with
+SLAM_SHARED_PARAMS = ['odom_frame', 'map_frame', 'base_frame', 'scan_topic',
+                      'resolution', 'max_laser_range']
+
+
+def slam_params(mode):
+    config = load_yaml(SLAM_CONFIGS[mode])
+    # slam_launch.py names the node slam_toolbox
+    assert list(config) == ['slam_toolbox']
+    return config['slam_toolbox']['ros__parameters']
+
+
+@pytest.mark.parametrize('mode', sorted(SLAM_CONFIGS))
+def test_slam_config_mode_matches_file(mode):
+    assert slam_params(mode)['mode'] == mode
+
+
+@pytest.mark.parametrize('mode', sorted(SLAM_CONFIGS))
+def test_slam_config_frames_match_robot(mode):
+    # odom -> base_link comes from mobile_robot_controller, /scan from
+    # xv_11_driver in the URDF's lidar frame (below base_link)
+    params = slam_params(mode)
+    robot = URDF.from_xml_string(expand_xacro('true'))
+
+    assert (params['odom_frame'], params['map_frame']) == ('odom', 'map')
+    assert params['base_frame'] == robot.get_root()
+    assert params['scan_topic'] == '/scan'
+    assert 'lidar' in robot.link_map
+
+
+def test_slam_configs_share_frames_and_sensor_values():
+    mapping = slam_params('mapping')
+    localization = slam_params('localization')
+
+    assert {k: mapping[k] for k in SLAM_SHARED_PARAMS} == \
+        {k: localization[k] for k in SLAM_SHARED_PARAMS}
+
+
+def test_slam_localization_map_comes_from_the_launch_file():
+    # slam_launch.py sets map_file_name from the map argument
+    assert 'map_file_name' not in slam_params('localization')
 
 
 # plugin.xml

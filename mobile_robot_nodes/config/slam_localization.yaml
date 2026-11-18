@@ -1,0 +1,31 @@
+# slam_toolbox localization against a saved pose graph
+# (slam_launch.py mode:=localization). map_file_name is set by the launch
+# file. Only values that differ from the node's defaults or are pinned on
+# purpose; frame and sensor values as in slam_mapping.yaml.
+slam_toolbox:
+  ros__parameters:
+    mode: localization
+    # pinned, the launch file and the robot rely on these names
+    odom_frame: odom
+    map_frame: map
+    # root of the URDF, there is no base_footprint
+    base_frame: base_link
+    scan_topic: /scan
+
+    # must match the resolution the map was built with
+    resolution: 0.05
+    # XV-11 range, longer readings are noise
+    max_laser_range: 5.0
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.2
+    transform_publish_period: 0.05
+
+    # start at the map origin, where mapping started (the empty default
+    # logs an error and does the same); elsewhere set the pose with RViz
+    # "2D Pose Estimate" (/initialpose)
+    map_start_pose: [0.0, 0.0, 0.0]
+    # match against the last 3 scans instead of 10 and accept a loop
+    # closure after 3 (upstream localization example, the node defaults
+    # are the mapping values)
+    scan_buffer_size: 3
+    loop_match_minimum_chain_size: 3
