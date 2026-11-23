@@ -64,23 +64,17 @@ constexpr double k_longTimeout = 5.0;
 constexpr std::chrono::seconds k_waitTimeout{5};
 constexpr double k_untouched = 123.0;
 
-const std::vector<std::string> k_limitParameters = {
-    "linear.x.max_acceleration",
-    "linear.x.max_deceleration",
-    "angular.z.max_acceleration",
-    "angular.z.max_deceleration",
-};
-
-const std::vector<std::string> k_velocityLimitParameters = {
-    "linear.x.max_velocity",
-    "angular.z.max_velocity",
+const std::vector<std::string> k_limitParams = {
+    "linear.x.max_acceleration",  "linear.x.max_deceleration",
+    "linear.x.max_velocity",      "angular.z.max_acceleration",
+    "angular.z.max_deceleration", "angular.z.max_velocity",
 };
 
 // mapping mode values of mobile_robot_launch.py
 constexpr double k_maxLinearVel = 0.15;
 constexpr double k_maxAngularVel = 0.4;
 
-std::vector<rclcpp::Parameter> baseParameters(double timeout = k_longTimeout) {
+std::vector<rclcpp::Parameter> baseParams(double timeout = k_longTimeout) {
   return {
       rclcpp::Parameter("left_wheel_joint_name", k_leftJoint),
       rclcpp::Parameter("right_wheel_joint_name", k_rightJoint),
@@ -94,9 +88,8 @@ std::vector<rclcpp::Parameter> baseParameters(double timeout = k_longTimeout) {
   };
 }
 
-std::vector<rclcpp::Parameter>
-limitedParameters(double timeout = k_longTimeout) {
-  auto params = baseParameters(timeout);
+std::vector<rclcpp::Parameter> limitedParams(double timeout = k_longTimeout) {
+  auto params = baseParams(timeout);
   params.emplace_back("linear.x.max_acceleration", k_linearAccel);
   params.emplace_back("linear.x.max_deceleration", k_linearDecel);
   params.emplace_back("angular.z.max_acceleration", k_angularAccel);
@@ -269,9 +262,9 @@ protected:
 // ---------------------------------------------------------------------------
 
 TEST_F(AccelerationLimitTest, LimitsDefaultToNaN) {
-  ASSERT_EQ(init(baseParameters()), controller_interface::return_type::OK);
+  ASSERT_EQ(init(baseParams()), controller_interface::return_type::OK);
   ASSERT_TRUE(configure());
-  for (const auto &name : k_limitParameters) {
+  for (const auto &name : k_limitParams) {
     EXPECT_TRUE(
         std::isnan(controller_->get_node()->get_parameter(name).as_double()))
         << name;
@@ -283,14 +276,14 @@ class AccelerationLimitInvalidTest
       public ::testing::WithParamInterface<std::string> {};
 
 TEST_P(AccelerationLimitInvalidTest, ConfigureFailsForNegativeLimit) {
-  auto params = baseParameters();
+  auto params = baseParams();
   params.emplace_back(GetParam(), -0.1);
   ASSERT_EQ(init(params), controller_interface::return_type::OK);
   EXPECT_FALSE(configure());
 }
 
 INSTANTIATE_TEST_SUITE_P(Negative, AccelerationLimitInvalidTest,
-                         ::testing::ValuesIn(k_limitParameters));
+                         ::testing::ValuesIn(k_limitParams));
 
 // ---------------------------------------------------------------------------
 // ramps
@@ -298,7 +291,7 @@ INSTANTIATE_TEST_SUITE_P(Negative, AccelerationLimitInvalidTest,
 
 // the case from #83: 0 -> 0.15 m/s at 0.3 m/s^2 takes 25 cycles of 0.006
 TEST_F(AccelerationLimitTest, LinearStepRampsWithAccelerationLimit) {
-  startController(limitedParameters());
+  startController(limitedParams());
   stepAfterCommand(10.0, 0.15);
   expectTwist(k_linearAccelStep, 0.0);
 
@@ -313,7 +306,7 @@ TEST_F(AccelerationLimitTest, LinearStepRampsWithAccelerationLimit) {
 }
 
 TEST_F(AccelerationLimitTest, PureRotationRampsWithAngularLimit) {
-  startController(limitedParameters());
+  startController(limitedParams());
   stepAfterCommand(10.0, 0.0, 1.0);
   expectTwist(0.0, k_angularAccelStep);
 
@@ -328,7 +321,7 @@ TEST_F(AccelerationLimitTest, PureRotationRampsWithAngularLimit) {
 // no joint scaling: the angular part reaches its target after 13 cycles while
 // the linear part keeps ramping
 TEST_F(AccelerationLimitTest, LinearAndAngularAreLimitedIndependently) {
-  startController(limitedParameters());
+  startController(limitedParams());
   stepAfterCommand(10.0, 0.15, 0.5);
   expectTwist(k_linearAccelStep, k_angularAccelStep);
 
@@ -339,7 +332,7 @@ TEST_F(AccelerationLimitTest, LinearAndAngularAreLimitedIndependently) {
 }
 
 TEST_F(AccelerationLimitTest, LimitScalesWithUpdatePeriod) {
-  startController(limitedParameters());
+  startController(limitedParams());
   stepAfterCommand(10.0, 0.15, 0.0, 0.04);
   expectTwist(0.3 * 0.04, 0.0);
 
@@ -348,7 +341,7 @@ TEST_F(AccelerationLimitTest, LimitScalesWithUpdatePeriod) {
 }
 
 TEST_F(AccelerationLimitTest, LowerCommandRampsDownWithDecelerationLimit) {
-  startController(limitedParameters());
+  startController(limitedParams());
   stepAfterCommand(10.0, 0.15);
   for (int i = 1; i <= 25; ++i) {
     step(10.0 + i * k_dt);
@@ -369,7 +362,7 @@ TEST_F(AccelerationLimitTest, LowerCommandRampsDownWithDecelerationLimit) {
 // the timeout replaces a stale command by zero, which is reached with the
 // deceleration limit instead of at once
 TEST_F(AccelerationLimitTest, CmdVelTimeoutRampsDownWithDecelerationLimit) {
-  startController(limitedParameters(1.0));
+  startController(limitedParams(1.0));
   stepAfterCommand(10.0, 0.15);
   for (int i = 1; i <= 50; ++i) {
     step(10.0 + i * k_dt);
@@ -388,7 +381,7 @@ TEST_F(AccelerationLimitTest, CmdVelTimeoutRampsDownWithDecelerationLimit) {
 // the limited command held before a deactivation must not be the start of
 // the ramp after the next activation
 TEST_F(AccelerationLimitTest, ReactivationStartsRampFromZero) {
-  startController(limitedParameters());
+  startController(limitedParams());
   stepAfterCommand(10.0, 0.15);
   for (int i = 1; i < 10; ++i) {
     step(10.0 + i * k_dt);
@@ -411,13 +404,13 @@ TEST_F(AccelerationLimitTest, ReactivationStartsRampFromZero) {
 // ---------------------------------------------------------------------------
 
 TEST_F(AccelerationLimitTest, WithoutLimitsStepPassesThrough) {
-  startController(baseParameters());
+  startController(baseParams());
   stepAfterCommand(10.0, 0.15, 1.0);
   expectTwist(0.15, 1.0);
 }
 
 TEST_F(AccelerationLimitTest, LinearLimitsLeaveAngularUnlimited) {
-  auto params = baseParameters();
+  auto params = baseParams();
   params.emplace_back("linear.x.max_acceleration", k_linearAccel);
   params.emplace_back("linear.x.max_deceleration", k_linearDecel);
   startController(params);
@@ -427,7 +420,7 @@ TEST_F(AccelerationLimitTest, LinearLimitsLeaveAngularUnlimited) {
 }
 
 TEST_F(AccelerationLimitTest, AngularLimitsLeaveLinearUnlimited) {
-  auto params = baseParameters();
+  auto params = baseParams();
   params.emplace_back("angular.z.max_acceleration", k_angularAccel);
   params.emplace_back("angular.z.max_deceleration", k_angularDecel);
   startController(params);
@@ -440,21 +433,8 @@ TEST_F(AccelerationLimitTest, AngularLimitsLeaveLinearUnlimited) {
 // velocity limits
 // ---------------------------------------------------------------------------
 
-TEST_F(AccelerationLimitTest, VelocityLimitsDefaultToNaN) {
-  ASSERT_EQ(init(baseParameters()), controller_interface::return_type::OK);
-  ASSERT_TRUE(configure());
-  for (const auto &name : k_velocityLimitParameters) {
-    EXPECT_TRUE(
-        std::isnan(controller_->get_node()->get_parameter(name).as_double()))
-        << name;
-  }
-}
-
-INSTANTIATE_TEST_SUITE_P(NegativeVelocity, AccelerationLimitInvalidTest,
-                         ::testing::ValuesIn(k_velocityLimitParameters));
-
 TEST_F(AccelerationLimitTest, CommandAboveVelocityLimitIsClamped) {
-  startController(withVelocityLimits(baseParameters()));
+  startController(withVelocityLimits(baseParams()));
   stepAfterCommand(10.0, 0.3, 1.0);
   expectTwist(k_maxLinearVel, k_maxAngularVel);
 
@@ -463,13 +443,13 @@ TEST_F(AccelerationLimitTest, CommandAboveVelocityLimitIsClamped) {
 }
 
 TEST_F(AccelerationLimitTest, CommandWithinVelocityLimitPassesThrough) {
-  startController(withVelocityLimits(baseParameters()));
+  startController(withVelocityLimits(baseParams()));
   stepAfterCommand(10.0, 0.1, -0.3);
   expectTwist(0.1, -0.3);
 }
 
 TEST_F(AccelerationLimitTest, LinearVelocityLimitLeavesAngularUnlimited) {
-  auto params = baseParameters();
+  auto params = baseParams();
   params.emplace_back("linear.x.max_velocity", k_maxLinearVel);
   startController(params);
 
@@ -478,7 +458,7 @@ TEST_F(AccelerationLimitTest, LinearVelocityLimitLeavesAngularUnlimited) {
 }
 
 TEST_F(AccelerationLimitTest, AngularVelocityLimitLeavesLinearUnlimited) {
-  auto params = baseParameters();
+  auto params = baseParams();
   params.emplace_back("angular.z.max_velocity", k_maxAngularVel);
   startController(params);
 
@@ -489,7 +469,7 @@ TEST_F(AccelerationLimitTest, AngularVelocityLimitLeavesLinearUnlimited) {
 // 0 -> 0.3 m/s limited to 0.15: the ramp of 0.006 per cycle ends at 0.15
 // after 25 cycles; angular 0.4 rad/s is reached after 10 cycles of 0.04
 TEST_F(AccelerationLimitTest, AccelerationRampStopsAtVelocityLimit) {
-  startController(withVelocityLimits(limitedParameters()));
+  startController(withVelocityLimits(limitedParams()));
   stepAfterCommand(10.0, 0.3, 1.0);
   expectTwist(k_linearAccelStep, k_angularAccelStep);
 
@@ -511,7 +491,7 @@ TEST_F(AccelerationLimitTest, AccelerationRampStopsAtVelocityLimit) {
 // braking starts at the limited velocity, not at the commanded one:
 // 0.15 -> 0 takes 12 cycles of 0.012 and a shortened 13th
 TEST_F(AccelerationLimitTest, DecelerationRampStartsAtVelocityLimit) {
-  startController(withVelocityLimits(limitedParameters()));
+  startController(withVelocityLimits(limitedParams()));
   stepAfterCommand(10.0, 0.3);
   for (int i = 1; i <= 25; ++i) {
     step(10.0 + i * k_dt);
