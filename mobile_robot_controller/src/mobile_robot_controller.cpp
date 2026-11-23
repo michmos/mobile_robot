@@ -239,12 +239,12 @@ MobileRobotController::update(const rclcpp::Time &time,
   angularVel = clampVelocity(angularVel, maxAngularVelocity_);
 
   const double dt_s = period.seconds();
-  linearVel = limitVelocity(lastLimitedCmdVel_.linearVelocity, linearVel,
-                            linearLimits_.maxAcceleration,
-                            linearLimits_.maxDeceleration, dt_s);
-  angularVel = limitVelocity(lastLimitedCmdVel_.angularVelocity, angularVel,
-                             angularLimits_.maxAcceleration,
-                             angularLimits_.maxDeceleration, dt_s);
+  linearVel = limitAcceleration(lastLimitedCmdVel_.linearVelocity, linearVel,
+                                linearLimits_.maxAcceleration,
+                                linearLimits_.maxDeceleration, dt_s);
+  angularVel = limitAcceleration(lastLimitedCmdVel_.angularVelocity, angularVel,
+                                 angularLimits_.maxAcceleration,
+                                 angularLimits_.maxDeceleration, dt_s);
 
   auto cmds =
       inverseKinematics(linearVel, angularVel, wheelSeparation_, wheelRadius_);

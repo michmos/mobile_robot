@@ -5,8 +5,8 @@
 
 namespace mobile_robot_controller {
 
-double limitVelocity(double previous, double target, double maxAcceleration,
-                     double maxDeceleration, double dt_s) {
+double limitAcceleration(double previous, double target, double maxAcceleration,
+                         double maxDeceleration, double dt_s) {
   if (std::isnan(maxAcceleration) && std::isnan(maxDeceleration)) {
     return target;
   }

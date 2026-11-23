@@ -7,7 +7,7 @@
 #include <vector>
 
 using mobile_robot_controller::clampVelocity;
-using mobile_robot_controller::limitVelocity;
+using mobile_robot_controller::limitAcceleration;
 
 namespace {
 
@@ -30,7 +30,7 @@ std::vector<double> ramp(double start, double target, int steps,
   std::vector<double> outputs;
   double v = start;
   for (int i = 0; i < steps; ++i) {
-    v = limitVelocity(v, target, accel, decel, dt_s);
+    v = limitAcceleration(v, target, accel, decel, dt_s);
     outputs.push_back(v);
   }
   return outputs;
@@ -69,20 +69,24 @@ TEST(SpeedLimiter, NeverOvershootsWhenTargetIsNoMultipleOfStep) {
 }
 
 TEST(SpeedLimiter, StepSmallerThanLimitPassesThrough) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.1, 0.104, k_accel, k_decel, k_dt_s), 0.104);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.1, 0.095, k_accel, k_decel, k_dt_s), 0.095);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.0, -0.005, k_accel, k_decel, k_dt_s),
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.1, 0.104, k_accel, k_decel, k_dt_s),
+                   0.104);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.1, 0.095, k_accel, k_decel, k_dt_s),
+                   0.095);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.0, -0.005, k_accel, k_decel, k_dt_s),
                    -0.005);
 }
 
 TEST(SpeedLimiter, StepExactlyAtLimitPassesThrough) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.0, k_accelStep, k_accel, k_decel, k_dt_s),
-                   k_accelStep);
+  EXPECT_DOUBLE_EQ(
+      limitAcceleration(0.0, k_accelStep, k_accel, k_decel, k_dt_s),
+      k_accelStep);
 }
 
 TEST(SpeedLimiter, UnchangedTargetKeepsVelocity) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.15, 0.15, k_accel, k_decel, k_dt_s), 0.15);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.0, 0.0, k_accel, k_decel, k_dt_s), 0.0);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.15, 0.15, k_accel, k_decel, k_dt_s),
+                   0.15);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.0, 0.0, k_accel, k_decel, k_dt_s), 0.0);
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +108,7 @@ TEST(SpeedLimiter, BrakingUsesDecelerationLimit) {
 }
 
 TEST(SpeedLimiter, SlowingDownWithoutStoppingUsesDecelerationLimit) {
-  EXPECT_NEAR(limitVelocity(0.15, 0.05, k_accel, k_decel, k_dt_s),
+  EXPECT_NEAR(limitAcceleration(0.15, 0.05, k_accel, k_decel, k_dt_s),
               0.15 - k_decelStep, k_tolerance);
 }
 
@@ -123,9 +127,9 @@ TEST(SpeedLimiter, NegativeDirectionIsSymmetric) {
     EXPECT_NEAR(downBackwards[i], -down[i], k_tolerance) << "step " << i + 1;
   }
 
-  EXPECT_NEAR(limitVelocity(-0.1, -0.2, k_accel, k_decel, k_dt_s),
+  EXPECT_NEAR(limitAcceleration(-0.1, -0.2, k_accel, k_decel, k_dt_s),
               -0.1 - k_accelStep, k_tolerance);
-  EXPECT_NEAR(limitVelocity(-0.1, -0.05, k_accel, k_decel, k_dt_s),
+  EXPECT_NEAR(limitAcceleration(-0.1, -0.05, k_accel, k_decel, k_dt_s),
               -0.1 + k_decelStep, k_tolerance);
 }
 
@@ -163,15 +167,17 @@ TEST(SpeedLimiter, ZeroCrossingIsSymmetric) {
 // a step that could brake past 0 ends on 0 instead of using the rest of the
 // step to accelerate the other way
 TEST(SpeedLimiter, SingleStepNeverCrossesZero) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.005, -0.1, k_accel, k_decel, k_dt_s), 0.0);
-  EXPECT_DOUBLE_EQ(limitVelocity(-0.005, 0.1, k_accel, k_decel, k_dt_s), 0.0);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.005, -0.1, k_accel, k_decel, k_dt_s),
+                   0.0);
+  EXPECT_DOUBLE_EQ(limitAcceleration(-0.005, 0.1, k_accel, k_decel, k_dt_s),
+                   0.0);
 }
 
 TEST(SpeedLimiter, StartingFromZeroInEitherDirectionAccelerates) {
-  EXPECT_NEAR(limitVelocity(0.0, 0.2, k_accel, k_decel, k_dt_s), k_accelStep,
-              k_tolerance);
-  EXPECT_NEAR(limitVelocity(0.0, -0.2, k_accel, k_decel, k_dt_s), -k_accelStep,
-              k_tolerance);
+  EXPECT_NEAR(limitAcceleration(0.0, 0.2, k_accel, k_decel, k_dt_s),
+              k_accelStep, k_tolerance);
+  EXPECT_NEAR(limitAcceleration(0.0, -0.2, k_accel, k_decel, k_dt_s),
+              -k_accelStep, k_tolerance);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,11 +185,11 @@ TEST(SpeedLimiter, StartingFromZeroInEitherDirectionAccelerates) {
 // ---------------------------------------------------------------------------
 
 TEST(SpeedLimiter, StepScalesWithDt) {
-  EXPECT_NEAR(limitVelocity(0.0, 0.15, k_accel, k_decel, 0.01), 0.003,
+  EXPECT_NEAR(limitAcceleration(0.0, 0.15, k_accel, k_decel, 0.01), 0.003,
               k_tolerance);
-  EXPECT_NEAR(limitVelocity(0.0, 0.15, k_accel, k_decel, 0.04), 0.012,
+  EXPECT_NEAR(limitAcceleration(0.0, 0.15, k_accel, k_decel, 0.04), 0.012,
               k_tolerance);
-  EXPECT_NEAR(limitVelocity(0.15, 0.0, k_accel, k_decel, 0.04), 0.126,
+  EXPECT_NEAR(limitAcceleration(0.15, 0.0, k_accel, k_decel, 0.04), 0.126,
               k_tolerance);
 
   // 0 -> 0.15 takes 0.5 s regardless of the cycle time
@@ -193,9 +199,9 @@ TEST(SpeedLimiter, StepScalesWithDt) {
 }
 
 TEST(SpeedLimiter, ZeroDtKeepsVelocity) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.0, 0.15, k_accel, k_decel, 0.0), 0.0);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.1, 0.0, k_accel, k_decel, 0.0), 0.1);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.1, -0.1, k_accel, k_decel, 0.0), 0.1);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.0, 0.15, k_accel, k_decel, 0.0), 0.0);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.1, 0.0, k_accel, k_decel, 0.0), 0.1);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.1, -0.1, k_accel, k_decel, 0.0), 0.1);
 }
 
 // ---------------------------------------------------------------------------
@@ -203,29 +209,30 @@ TEST(SpeedLimiter, ZeroDtKeepsVelocity) {
 // ---------------------------------------------------------------------------
 
 TEST(SpeedLimiter, NaNLimitsPassTargetThrough) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.0, 0.15, k_nan, k_nan, k_dt_s), 0.15);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.15, 0.0, k_nan, k_nan, k_dt_s), 0.0);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.1, -0.1, k_nan, k_nan, k_dt_s), -0.1);
-  EXPECT_DOUBLE_EQ(limitVelocity(-0.3, 0.2, k_nan, k_nan, k_dt_s), 0.2);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.0, 0.15, k_nan, k_nan, k_dt_s), 0.15);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.15, 0.0, k_nan, k_nan, k_dt_s), 0.0);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.1, -0.1, k_nan, k_nan, k_dt_s), -0.1);
+  EXPECT_DOUBLE_EQ(limitAcceleration(-0.3, 0.2, k_nan, k_nan, k_dt_s), 0.2);
 }
 
 // controllers without limits run update() with any period, a period of 0
 // must not hold the command back
 TEST(SpeedLimiter, NaNLimitsPassThroughEvenWithZeroDt) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.0, 0.15, k_nan, k_nan, 0.0), 0.15);
-  EXPECT_DOUBLE_EQ(limitVelocity(0.15, 0.0, k_nan, k_nan, 0.0), 0.0);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.0, 0.15, k_nan, k_nan, 0.0), 0.15);
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.15, 0.0, k_nan, k_nan, 0.0), 0.0);
 }
 
 TEST(SpeedLimiter, NaNAccelerationOnlyUnlimitsSpeedingUp) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.0, 0.15, k_nan, k_decel, k_dt_s), 0.15);
-  EXPECT_NEAR(limitVelocity(0.15, 0.0, k_nan, k_decel, k_dt_s),
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.0, 0.15, k_nan, k_decel, k_dt_s), 0.15);
+  EXPECT_NEAR(limitAcceleration(0.15, 0.0, k_nan, k_decel, k_dt_s),
               0.15 - k_decelStep, k_tolerance);
 }
 
 TEST(SpeedLimiter, NaNDecelerationOnlyUnlimitsSlowingDown) {
-  EXPECT_DOUBLE_EQ(limitVelocity(0.15, 0.0, k_accel, k_nan, k_dt_s), 0.0);
-  EXPECT_DOUBLE_EQ(limitVelocity(-0.15, -0.05, k_accel, k_nan, k_dt_s), -0.05);
-  EXPECT_NEAR(limitVelocity(0.0, 0.15, k_accel, k_nan, k_dt_s), k_accelStep,
+  EXPECT_DOUBLE_EQ(limitAcceleration(0.15, 0.0, k_accel, k_nan, k_dt_s), 0.0);
+  EXPECT_DOUBLE_EQ(limitAcceleration(-0.15, -0.05, k_accel, k_nan, k_dt_s),
+                   -0.05);
+  EXPECT_NEAR(limitAcceleration(0.0, 0.15, k_accel, k_nan, k_dt_s), k_accelStep,
               k_tolerance);
 }
 
@@ -265,7 +272,8 @@ TEST(SpeedLimiter, AccelerationRampStopsAtVelocityLimit) {
   const auto expected = ramp(0.0, 0.15, 30);
   double v = 0.0;
   for (int i = 0; i < 30; ++i) {
-    v = limitVelocity(v, clampVelocity(0.3, 0.15), k_accel, k_decel, k_dt_s);
+    v = limitAcceleration(v, clampVelocity(0.3, 0.15), k_accel, k_decel,
+                          k_dt_s);
     EXPECT_DOUBLE_EQ(v, expected[i]) << "step " << i + 1;
     EXPECT_LE(v, 0.15) << "step " << i + 1;
   }

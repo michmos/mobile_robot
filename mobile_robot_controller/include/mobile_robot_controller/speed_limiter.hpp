@@ -17,12 +17,13 @@ namespace mobile_robot_controller {
 // - dt_s <= 0 leaves `previous` unchanged in limited directions
 // limits in m/s^2 or rad/s^2, dt_s in s
 // @return: the limited velocity
-double limitVelocity(double previous, double target, double maxAcceleration,
-                     double maxDeceleration, double dt_s);
+double limitAcceleration(double previous, double target, double maxAcceleration,
+                         double maxDeceleration, double dt_s);
 
 // clamps `v` to [-maxVelocity, maxVelocity], symmetric for both directions
 // - a NaN limit means no limit, the result is `v`
-// - applied to the target before limitVelocity(), so a ramp ends at the limit
+// - applied to the target before limitAcceleration(), so a ramp ends at
+//   the limit
 // maxVelocity >= 0 in m/s or rad/s
 // @return: the clamped velocity
 double clampVelocity(double v, double maxVelocity);
