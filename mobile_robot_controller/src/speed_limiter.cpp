@@ -1,11 +1,12 @@
 #include "mobile_robot_controller/speed_limiter.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace mobile_robot_controller {
 
-double limitVelocity(double previous, double target, double maxAcceleration,
-                     double maxDeceleration, double dt_s) {
+double limitAcceleration(double previous, double target, double maxAcceleration,
+                         double maxDeceleration, double dt_s) {
   if (std::isnan(maxAcceleration) && std::isnan(maxDeceleration)) {
     return target;
   }
@@ -29,6 +30,13 @@ double limitVelocity(double previous, double target, double maxAcceleration,
     return goal;
   }
   return previous + std::copysign(maxStep, diff);
+}
+
+double clampVelocity(double v, double maxVelocity) {
+  if (std::isnan(maxVelocity)) {
+    return v;
+  }
+  return std::clamp(v, -maxVelocity, maxVelocity);
 }
 
 } // namespace mobile_robot_controller
