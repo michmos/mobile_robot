@@ -449,3 +449,156 @@ def test_joystick_launch_has_expected_nodes(tmp_path, monkeypatch):
     ])
     assert [a.name for a in description.entities
             if isinstance(a, DeclareLaunchArgument)] == ['use_sim_time']
+
+
+# Nav2 config
+
+def nav2_params(node):
+    """ros__parameters of a node in nav2_params.yaml ('a/b' = nested)."""
+    config = load_yaml('nav2_params.yaml')
+    for key in node.split('/'):
+        config = config[key]
+    return config['ros__parameters']
+
+
+def controller_params(override=None):
+    """mobile_robot_controller params, optionally with a launch override."""
+    params = load_yaml('controller_manager.yaml')[
+        'mobile_robot_controller']['ros__parameters']
+    if override:
+        for axis, values in load_yaml(override)['mobile_robot_controller'][
+                'ros__parameters'].items():
+            for dof, limits in values.items():
+                params[axis][dof].update(limits)
+    return params
+
+
+NAV2_COSTMAPS = ['local_costmap/local_costmap',
+                 'global_costmap/global_costmap']
+# Nav2 runs with slam:=mapping and slam:=localization; mapping lowers the
+# controller's velocity limits
+CONTROLLER_MODES = [None, 'controller_slam_mapping.yaml']
+
+
+def test_nav2_config_has_one_section_per_node():
+    config = load_yaml('nav2_params.yaml')
+
+    assert sorted(config) == sorted([
+        'bt_navigator', 'controller_server', 'planner_server',
+        'behavior_server', 'local_costmap', 'global_costmap'])
+    for costmap in NAV2_COSTMAPS:
+        assert 'ros__parameters' in config[costmap.split('/')[0]][
+            costmap.split('/')[1]]
+
+
+@pytest.mark.parametrize('mode', sorted(SLAM_CONFIGS))
+def test_nav2_frames_match_slam(mode):
+    slam = slam_params(mode)
+    navigator = nav2_params('bt_navigator')
+    local = nav2_params('local_costmap/local_costmap')
+    global_ = nav2_params('global_costmap/global_costmap')
+
+    assert navigator['global_frame'] == slam['map_frame']
+    assert global_['global_frame'] == slam['map_frame']
+    # the local costmap rolls along in odom, it must not jump with map -> odom
+    assert local['global_frame'] == slam['odom_frame']
+    for params in (navigator, local, global_):
+        assert params['robot_base_frame'] == slam['base_frame']
+    # costmap cells line up with the slam map's cells
+    assert local['resolution'] == global_['resolution'] == slam['resolution']
+
+
+def test_nav2_costmaps_use_scan_and_map():
+    slam = slam_params('mapping')
+
+    for costmap in NAV2_COSTMAPS:
+        params = nav2_params(costmap)
+        assert params['obstacle_layer']['scan']['topic'] == \
+            slam['scan_topic']
+        assert params['obstacle_layer']['scan']['raytrace_max_range'] <= \
+            slam['max_laser_range']
+    assert nav2_params('global_costmap/global_costmap')[
+        'static_layer']['map_topic'] == '/map'
+    # mobile_robot_controller publishes /odom
+    assert nav2_params('bt_navigator')['odom_topic'] == '/odom'
+    assert nav2_params('controller_server')['odom_topic'] == '/odom'
+
+
+def test_nav2_footprint_is_the_same_circle_in_both_costmaps():
+    radii = {nav2_params(c)['robot_radius'] for c in NAV2_COSTMAPS}
+
+    assert radii == {0.13}
+    for costmap in NAV2_COSTMAPS:
+        assert 'footprint' not in nav2_params(costmap)
+
+
+@pytest.mark.parametrize('override', CONTROLLER_MODES)
+def test_nav2_speeds_within_controller_limits(override):
+    limits = controller_params(override)
+    rpp = nav2_params('controller_server')['FollowPath']
+    behaviors = nav2_params('behavior_server')
+    max_linear = limits['linear']['x'].get('max_velocity', float('inf'))
+    max_angular = limits['angular']['z'].get('max_velocity', float('inf'))
+
+    assert rpp['desired_linear_vel'] <= max_linear
+    assert rpp['regulated_linear_scaling_min_speed'] <= \
+        rpp['desired_linear_vel']
+    assert rpp['rotate_to_heading_angular_vel'] <= max_angular
+    assert behaviors['max_rotational_vel'] <= max_angular
+
+
+def test_nav2_accelerations_within_controller_limits():
+    limits = controller_params()
+    linear, angular = limits['linear']['x'], limits['angular']['z']
+    rpp = nav2_params('controller_server')['FollowPath']
+    behaviors = nav2_params('behavior_server')
+
+    assert rpp['max_angular_accel'] <= angular['max_acceleration']
+    assert behaviors['rotational_acc_lim'] <= angular['max_acceleration']
+    for behavior in ('backup', 'drive_on_heading'):
+        assert behaviors[behavior]['acceleration_limit'] <= \
+            linear['max_acceleration']
+        assert -behaviors[behavior]['deceleration_limit'] <= \
+            linear['max_deceleration']
+
+
+def test_nav2_controller_period_well_below_cmd_vel_timeout():
+    # a single late cycle must not let the controller time out and stop
+    period = 1.0 / nav2_params('controller_server')['controller_frequency']
+
+    assert period <= controller_params()['cmd_vel_timeout'] / 4
+
+
+def test_nav2_publishes_the_twist_type_twist_mux_expects():
+    twist_mux = load_yaml('twist_mux.yaml')['twist_mux']['ros__parameters']
+
+    for node in ('controller_server', 'behavior_server'):
+        assert nav2_params(node)['enable_stamped_cmd_vel'] == \
+            twist_mux['use_stamped']
+
+
+def test_twist_mux_nav_input_has_lowest_priority():
+    topics = load_yaml('twist_mux.yaml')['twist_mux'][
+        'ros__parameters']['topics']
+    navigation = topics.pop('navigation')
+
+    assert navigation['topic'] == 'cmd_vel_nav'
+    assert all(navigation['priority'] < other['priority']
+               for other in topics.values())
+
+
+def test_slam_rviz_has_slam_and_nav2_tools():
+    config = load_yaml('slam.rviz')
+    manager = config['Visualization Manager']
+    topics = {d['Topic']['Value'] for d in manager['Displays']
+              if 'Topic' in d}
+
+    assert {'slam_toolbox::SlamToolboxPlugin',
+            'nav2_rviz_plugins/Navigation 2'} <= \
+        {p['Class'] for p in config['Panels']}
+    assert {'rviz_default_plugins/SetInitialPose',
+            'nav2_rviz_plugins/GoalTool'} <= \
+        {t['Class'] for t in manager['Tools']}
+    assert {'/map', '/scan', '/global_costmap/costmap',
+            '/local_costmap/costmap', '/plan', '/received_global_plan',
+            '/local_costmap/published_footprint'} <= topics
