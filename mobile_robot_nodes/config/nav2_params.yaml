@@ -1,0 +1,137 @@
+# Nav2 (nav2_launch.py): Regulated Pure Pursuit, NavFn, Nav2's default
+# behavior tree. map -> odom and /map come from slam_toolbox (mapping or
+# localization mode), odom -> base_link and /odom from mobile_robot_controller.
+# Only values that differ from Nav2's defaults (kilted) or are pinned on
+# purpose.
+# Speeds stay at or below mobile_robot_controller's lowest limits (the
+# slam:=mapping override in controller_slam_mapping.yaml, 0.15 m/s / 0.4 rad/s:
+# slam_toolbox doesn't deskew scans, #87), accelerations at or below
+# controller_manager.yaml's; the controller stays the one place that ramps
+# commands. test_smoke.py checks both.
+# transform_tolerance 0.5 s everywhere: Nav2 may run on the laptop, with the
+# TF from the Pi arriving over WiFi.
+
+bt_navigator:
+  ros__parameters:
+    # pinned, slam_toolbox's map frame; root of the URDF, there is no
+    # base_footprint
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odom
+    transform_tolerance: 0.5
+    # ms the behavior tree waits for a server to accept a goal or answer a
+    # service call; the default 20 ms times out on a loaded CPU (the Pi)
+    default_server_timeout: 100
+
+controller_server:
+  ros__parameters:
+    # 20 Hz (default): a period well below mobile_robot_controller's
+    # cmd_vel_timeout (0.5 s)
+    controller_frequency: 20.0
+    odom_topic: /odom
+    # pinned, twist_mux has use_stamped: true
+    enable_stamped_cmd_vel: true
+
+    goal_checker:
+      # a small robot in a room (default 0.25 m)
+      xy_goal_tolerance: 0.10
+
+    controller_plugins: [FollowPath]
+    FollowPath:
+      plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+      desired_linear_vel: 0.15
+      # default 0.25 is above desired_linear_vel, regulation could not slow
+      # down near obstacles and in curves
+      regulated_linear_scaling_min_speed: 0.05
+      # turns in place towards the path and at the goal
+      use_rotate_to_heading: true
+      rotate_to_heading_angular_vel: 0.4
+      # = angular.z.max_acceleration in controller_manager.yaml
+      max_angular_accel: 2.0
+      # no rear-facing lidar coverage to rely on
+      allow_reversing: false
+      use_collision_detection: true
+      transform_tolerance: 0.5
+
+planner_server:
+  ros__parameters:
+    planner_plugins: [GridBased]
+    GridBased:
+      plugin: nav2_navfn_planner::NavfnPlanner
+      # plan through unknown cells, for goals in unmapped space while mapping
+      allow_unknown: true
+
+behavior_server:
+  ros__parameters:
+    # pinned, twist_mux has use_stamped: true
+    enable_stamped_cmd_vel: true
+    transform_tolerance: 0.5
+    # spin
+    max_rotational_vel: 0.4
+    rotational_acc_lim: 2.0
+    # backup / drive_on_heading: = linear.x max_acceleration /
+    # max_deceleration in controller_manager.yaml (default 2.5 m/s^2)
+    backup:
+      acceleration_limit: 0.3
+      deceleration_limit: -0.6
+    drive_on_heading:
+      acceleration_limit: 0.3
+      deceleration_limit: -0.6
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      global_frame: odom
+      robot_base_frame: base_link
+      rolling_window: true
+      width: 3
+      height: 3
+      # the slam map's resolution
+      resolution: 0.05
+      # chassis 0.20 x 0.15 m, wheels to ~0.216 m width
+      robot_radius: 0.13
+      transform_tolerance: 0.5
+      # update_frequency 5 Hz (default) = XV-11 scan rate
+      plugins: [obstacle_layer, inflation_layer]
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          marking: true
+          clearing: true
+          # XV-11 range ~5 m, the far readings are noisy
+          obstacle_max_range: 4.5
+          raytrace_max_range: 5.0
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      global_frame: map
+      robot_base_frame: base_link
+      resolution: 0.05
+      robot_radius: 0.13
+      transform_tolerance: 0.5
+      # keeps unknown cells unknown (not free), the planner may still cross
+      # them (allow_unknown)
+      track_unknown_space: true
+      plugins: [static_layer, obstacle_layer, inflation_layer]
+      static_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        # slam_toolbox's /map, transient local (default)
+        map_topic: /map
+      obstacle_layer:
+        plugin: nav2_costmap_2d::ObstacleLayer
+        observation_sources: scan
+        scan:
+          topic: /scan
+          data_type: LaserScan
+          marking: true
+          clearing: true
+          obstacle_max_range: 4.5
+          raytrace_max_range: 5.0
+      inflation_layer:
+        plugin: nav2_costmap_2d::InflationLayer

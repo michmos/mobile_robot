@@ -12,3 +12,9 @@ twist_mux:
         topic   : cmd_vel_keyboard
         timeout : 0.5
         priority: 90
+      # Nav2 (nav2_launch.py), lowest priority: the joystick and keyboard
+      # always override it
+      navigation:
+        topic   : cmd_vel_nav
+        timeout : 0.5
+        priority: 10
