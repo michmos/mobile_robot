@@ -21,14 +21,14 @@ CMD_VEL_TOPIC = '/cmd_vel_nav'
 def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     params_file = LaunchConfiguration('params_file')
-    parameters = [params_file, {'use_sim_time': use_sim_time}]
+    params = [params_file, {'use_sim_time': use_sim_time}]
 
     nav2_nodes = [
         Node(
             package=package,
             executable=executable,
             name=executable,
-            parameters=parameters,
+            parameters=params,
             # controller_server and behavior_server publish on cmd_vel
             remappings=[('cmd_vel', CMD_VEL_TOPIC)],
             output='screen',

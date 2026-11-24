@@ -4,36 +4,18 @@ Smoke tests for nav2_launch.py and the nav argument of mobile_robot_launch.py.
 Only the launch descriptions are built, no node is started.
 """
 
-import importlib.util
 import os
-import tempfile
 
-from launch import LaunchContext
-from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
-                            OpaqueFunction)
+from launch.actions import IncludeLaunchDescription
 from launch.utilities import perform_substitutions
+from launch_helpers import (CONFIG_DIR, context_with_defaults,
+                            declared_defaults, LAUNCH_DIR, load_module,
+                            load_robot_launch, node_name, node_params, run)
 from launch_ros.actions import Node
-from launch_ros.utilities import evaluate_parameters
 import pytest
-
-PACKAGE_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), os.pardir)
-LAUNCH_DIR = os.path.join(PACKAGE_DIR, 'launch')
-CONFIG_DIR = os.path.join(PACKAGE_DIR, 'config')
 
 NAV2_SERVERS = ['controller_server', 'planner_server', 'behavior_server',
                 'bt_navigator', 'waypoint_follower']
-
-
-def load_module(name, monkeypatch):
-    spec = importlib.util.spec_from_file_location(
-        name[:-3], os.path.join(LAUNCH_DIR, name))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    # read config/ from the source tree, not the install space
-    monkeypatch.setattr(module, 'get_package_share_directory',
-                        lambda package: PACKAGE_DIR)
-    return module
 
 
 @pytest.fixture
@@ -43,47 +25,11 @@ def nav2_launch(monkeypatch):
 
 @pytest.fixture
 def robot_launch(tmp_path, monkeypatch):
-    monkeypatch.delenv('MAP_DIR', raising=False)
-    # the launch file writes the kinematics params to the system temp dir
-    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
-    return load_module('mobile_robot_launch.py', monkeypatch)
-
-
-def declared_arguments(description):
-    return [a for a in description.entities
-            if isinstance(a, DeclareLaunchArgument)]
-
-
-def context_with_defaults(description, **configurations):
-    context = LaunchContext()
-    for argument in declared_arguments(description):
-        context.launch_configurations[argument.name] = perform_substitutions(
-            context, argument.default_value)
-    context.launch_configurations.update(configurations)
-    # validates the values against the declared choices
-    for argument in declared_arguments(description):
-        argument.execute(context)
-    return context
-
-
-# launch_ros has no public getters for these before the node is executed
-
-def node_name(node):
-    return node._Node__node_name
-
-
-def node_parameters(context, node):
-    """Parameter files and the merged dict parameters of a node."""
-    files, values = [], {}
-    for parameter in evaluate_parameters(context, node._Node__parameters):
-        if isinstance(parameter, dict):
-            values.update(parameter)
-        else:
-            files.append(str(parameter))
-    return files, values
+    return load_robot_launch(tmp_path, monkeypatch)
 
 
 def node_remappings(context, node):
+    # launch_ros has no public getter before the node is executed
     return {perform_substitutions(context, src):
             perform_substitutions(context, dst)
             for src, dst in node._Node__remappings}
@@ -100,10 +46,7 @@ def nav2_nodes(nav2_launch):
 
 
 def test_nav2_launch_defaults(nav2_launch):
-    description = nav2_launch.generate_launch_description()
-
-    assert {a.name: perform_substitutions(LaunchContext(), a.default_value)
-            for a in declared_arguments(description)} == {
+    assert declared_defaults(nav2_launch) == {
         'use_sim_time': 'false',
         'params_file': os.path.join(CONFIG_DIR, 'nav2_params.yaml'),
     }
@@ -118,8 +61,7 @@ def test_nav2_launch_starts_servers_and_one_lifecycle_manager(nav2_nodes):
 
 def test_lifecycle_manager_activates_every_server(nav2_nodes):
     context, nodes = nav2_nodes
-    _, values = node_parameters(context,
-                                nodes['lifecycle_manager_navigation'])
+    _, values = node_params(context, nodes['lifecycle_manager_navigation'])
 
     assert values['autostart'] is True
     assert sorted(values['node_names']) == sorted(NAV2_SERVERS)
@@ -129,7 +71,7 @@ def test_lifecycle_manager_activates_every_server(nav2_nodes):
 def test_servers_load_the_params_file(nav2_nodes, server):
     context, nodes = nav2_nodes
 
-    files, values = node_parameters(context, nodes[server])
+    files, values = node_params(context, nodes[server])
 
     assert files == [os.path.join(CONFIG_DIR, 'nav2_params.yaml')]
     assert values['use_sim_time'] is False
@@ -149,20 +91,10 @@ def test_use_sim_time_is_passed_to_nav2(nav2_launch):
 
     for node in description.entities:
         if isinstance(node, Node):
-            assert node_parameters(context, node)[1]['use_sim_time'] is True
+            assert node_params(context, node)[1]['use_sim_time'] is True
 
 
 # mobile_robot_launch.py nav argument
-
-def run(module, **configurations):
-    """Actions the launch file starts for the given launch arguments."""
-    description = module.generate_launch_description()
-    context = context_with_defaults(description, **configurations)
-    setup = next(a for a in description.entities
-                 if isinstance(a, OpaqueFunction))
-    return context, [a for a in setup.execute(context)
-                     if a.condition is None or a.condition.evaluate(context)]
-
 
 def nav2_includes(context, actions):
     includes = []
@@ -178,10 +110,7 @@ def nav2_includes(context, actions):
 
 
 def test_robot_launch_nav_defaults_to_false(robot_launch):
-    description = robot_launch.generate_launch_description()
-
-    assert context_with_defaults(description).launch_configurations[
-        'nav'] == 'false'
+    assert declared_defaults(robot_launch)['nav'] == 'false'
 
 
 @pytest.mark.parametrize('slam', ['off', 'mapping', 'localization'])
