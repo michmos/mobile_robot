@@ -38,6 +38,9 @@
   <test_depend>tf2_ros</test_depend>
   <!-- test_slam.launch.py runs slam_launch.py with a fake scan -->
   <test_depend>slam_toolbox</test_depend>
+  <!-- test_nav2.launch.py sends a NavigateToPose goal -->
+  <test_depend>nav2_msgs</test_depend>
+  <test_depend>action_msgs</test_depend>
 
   <!-- mobile_robot_launch.py: brings up controller_manager against
        MobileRobotHardware (or mock_components/GenericSystem from
@@ -67,6 +70,18 @@
   <!-- slam_launch.py and the save_map script -->
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <!-- nav2_launch.py: single Nav2 packages instead of navigation2 /
+       nav2_bringup, to keep the Pi install small. nav2_rviz_plugins (RViz
+       on the laptop) is installed by hand, see pi_setup/README.md -->
+  <exec_depend>nav2_controller</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_behaviors</exec_depend>
+  <exec_depend>nav2_bt_navigator</exec_depend>
+  <exec_depend>nav2_waypoint_follower</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_costmap_2d</exec_depend>
+  <exec_depend>nav2_navfn_planner</exec_depend>
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

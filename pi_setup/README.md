@@ -35,6 +35,13 @@ The branch is `BRANCH=dev` at the top of the script, switch it to `main` once `m
 ## Prerequisites
 - `/home/mypi/start_robot.sh` exists, is executable and ends with `exec ros2 launch ...` so signals reach the launch
 - ROS 2 kilted (`/opt/ros/kilted`), `git`, `colcon` and `vcs` (`python3-vcstool`) are installed, the build dependencies are installed (rosdep)
+- Nav2 (`nav:=true`): the single packages, not `navigation2` (rosdep installs the same from `package.xml`):
+  ```bash
+  sudo apt install ros-kilted-nav2-controller ros-kilted-nav2-planner ros-kilted-nav2-behaviors \
+    ros-kilted-nav2-bt-navigator ros-kilted-nav2-waypoint-follower ros-kilted-nav2-lifecycle-manager \
+    ros-kilted-nav2-costmap-2d ros-kilted-nav2-navfn-planner ros-kilted-nav2-regulated-pure-pursuit-controller
+  ```
+  On the laptop running RViz also `ros-kilted-nav2-rviz-plugins` (for `slam.rviz`).
 - `src/xv_11_driver` is missing or a clone of `michmos/xv_11_driver`: `vcs import` refuses to touch a clone of another URL (e.g. upstream `mjstn/xv_11_driver`), move it out of `src/` once
 - user `mypi` is in the `dialout` group
 - `serial_port` in `mobile_robot_nodes/description/ros2_control.xacro` is `/dev/esp32`
