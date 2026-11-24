@@ -36,6 +36,19 @@ controller_server:
       # a small robot in a room (default 0.25 m)
       xy_goal_tolerance: 0.10
 
+    progress_checker:
+      # also counts turning in place as progress; the default
+      # SimpleProgressChecker only counts distance and aborts while RPP turns
+      # towards the path (180 deg at 0.4 rad/s take ~8 s)
+      plugin: nav2_controller::PoseProgressChecker
+      # 4 s at regulated_linear_scaling_min_speed (0.05 m/s), ~1.3 s at 0.15 m/s
+      required_movement_radius: 0.2
+      # ~1.3 s at rotate_to_heading_angular_vel (0.4 rad/s)
+      required_movement_angle: 0.5
+      # 2.5x the slowest case above; aborts only when the robot neither moves
+      # nor turns for 10 s
+      movement_time_allowance: 10.0
+
     controller_plugins: [FollowPath]
     FollowPath:
       plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
@@ -48,7 +61,10 @@ controller_server:
       rotate_to_heading_angular_vel: 0.4
       # = angular.z.max_acceleration in controller_manager.yaml
       max_angular_accel: 2.0
-      # no rear-facing lidar coverage to rely on
+      # forward only: use_rotate_to_heading turns the robot to face the path,
+      # NavFn's plans carry no driving direction (with reversing, RPP backs up
+      # to path points behind the robot); RPP rejects enabling reversing at
+      # runtime while use_rotate_to_heading is on
       allow_reversing: false
       use_collision_detection: true
       transform_tolerance: 0.5

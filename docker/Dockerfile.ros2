@@ -64,7 +64,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   for saving maps.
 # ^ nav2_*: the Nav2 servers nav2_launch.py starts plus the RPP and NavFn
 #   plugins, instead of the navigation2 metapackage. nav2_rviz_plugins is
-#   only for slam.rviz on the laptop.
+#   only for mobile_robot.rviz on the laptop.
 
 # compile check for the esp32 firmware (esp32_firmware/), not used at runtime
 # The esp32:esp32 core is pinned to an exact version (ESP32_CORE_VERSION) so

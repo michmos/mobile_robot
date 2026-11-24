@@ -562,6 +562,20 @@ def test_nav2_accelerations_within_controller_limits():
             linear['max_deceleration']
 
 
+def test_nav2_progress_checker_counts_slow_driving_and_turning():
+    controller = nav2_params('controller_server')
+    checker = controller['progress_checker']
+    rpp = controller['FollowPath']
+
+    # RPP turns in place towards the path, which only counts as progress here
+    assert checker['plugin'] == 'nav2_controller::PoseProgressChecker'
+    allowance = checker['movement_time_allowance']
+    assert checker['required_movement_radius'] / \
+        rpp['regulated_linear_scaling_min_speed'] < allowance / 2
+    assert checker['required_movement_angle'] / \
+        rpp['rotate_to_heading_angular_vel'] < allowance / 2
+
+
 def test_nav2_controller_period_well_below_cmd_vel_timeout():
     # a single late cycle must not let the controller time out and stop
     period = 1.0 / nav2_params('controller_server')['controller_frequency']
@@ -587,8 +601,8 @@ def test_twist_mux_nav_input_has_lowest_priority():
                for other in topics.values())
 
 
-def test_slam_rviz_has_slam_and_nav2_tools():
-    config = load_yaml('slam.rviz')
+def test_rviz_config_has_slam_and_nav2_tools():
+    config = load_yaml('mobile_robot.rviz')
     manager = config['Visualization Manager']
     topics = {d['Topic']['Value'] for d in manager['Displays']
               if 'Topic' in d}
