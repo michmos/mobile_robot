@@ -196,6 +196,6 @@ def test_kinematics_from_real_robot_description():
     params = kinematics_from_urdf(urdf_xml)
 
     # properties.xacro: 2 * (chassis_width/2 + wheel_gap + wheel_length/2)
-    #                 = 2 * (0.075 + 0.006 + 0.0135) = 0.189
-    assert params['wheel_separation'] == pytest.approx(0.189, abs=1e-9)
+    #                 = 2 * (0.075 + 0.0038 + 0.0135) = 0.1846
+    assert params['wheel_separation'] == pytest.approx(0.1846, abs=1e-9)
     assert params['wheel_radius'] == pytest.approx(0.0335, abs=1e-9)

@@ -10,7 +10,8 @@
   <xacro:property name="wheel_radius" value="0.0335"/>
   <xacro:property name="wheel_length" value="0.027"/>
   <xacro:property name="wheel_mass" value="0.1"/>
-  <xacro:property name="wheel_gap" value="0.006"/>
+  <!-- effective gap, not the physical one (~6.5 mm): sets the effective wheel separation -->
+  <xacro:property name="wheel_gap" value="0.0038"/>
 
   <xacro:property name="caster_wheel_radius" value="${wheel_radius/2}"/>
   <xacro:property name="caster_wheel_mass" value="0.1"/>
