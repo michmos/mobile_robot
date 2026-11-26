@@ -57,6 +57,7 @@ def test_defaults_keep_robot_behavior(launch_module):
         'slam': 'off',
         'map': '',
         'map_dir': '~/maps',
+        'nav': 'false',
         'use_sim_time': 'false',
     }
 

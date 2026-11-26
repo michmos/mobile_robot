@@ -85,6 +85,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_slam_launch test/test_slam_launch.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
+  ament_add_pytest_test(test_nav2_launch test/test_nav2_launch.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
 
   # Full bringup with mock hardware. The isolated runner (ament_cmake_ros)
   # picks a free ROS_DOMAIN_ID, and discovery stays on localhost, so test
@@ -112,6 +115,14 @@ if(BUILD_TESTING)
   add_launch_test(test/test_slam.launch.py
     TARGET test_slam_launch_mapping
     TIMEOUT 90
+    RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py"
+    ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+  )
+  # mobile_robot_launch.py slam:=mapping nav:=true with mock hardware and a
+  # fake /scan: Nav2 comes up and drives to a goal.
+  add_launch_test(test/test_nav2.launch.py
+    TARGET test_nav2_goal
+    TIMEOUT 120
     RUNNER "${ament_cmake_ros_DIR}/run_test_isolated.py"
     ENV ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
   )

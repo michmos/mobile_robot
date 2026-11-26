@@ -46,9 +46,15 @@ def generate_launch_description():
             description=f'Directory holding the maps, '
                         f'${MAP_DIR_ENV} or {DEFAULT_MAP_DIR} by default'),
         DeclareLaunchArgument(
+            'nav',
+            default_value='false',
+            choices=['true', 'false'],
+            description='Start Nav2 (nav2_launch.py), needs slam mapping '
+                        'or localization'),
+        DeclareLaunchArgument(
             'use_sim_time',
             default_value='false',
-            description='Use sim time in slam_toolbox if true'),
+            description='Use sim time in slam_toolbox and Nav2 if true'),
         # the robot description is expanded in Python (the controller
         # kinematics are derived from it), so it needs the resolved value
         OpaqueFunction(function=launch_setup),
@@ -58,6 +64,11 @@ def generate_launch_description():
 def launch_setup(context):
     use_mock_hardware = LaunchConfiguration(
         'use_mock_hardware').perform(context)
+    nav = LaunchConfiguration('nav').perform(context) == 'true'
+    if nav and LaunchConfiguration('slam').perform(context) == 'off':
+        # Nav2 needs map -> odom and /map from slam_toolbox
+        raise RuntimeError('nav:=true needs slam:=mapping or '
+                           'slam:=localization')
 
     xacro_file = os.path.join(
         get_package_share_directory('mobile_robot'),
@@ -87,6 +98,9 @@ def launch_setup(context):
     slam_launch = os.path.join(
         get_package_share_directory('mobile_robot'),
         'launch', 'slam_launch.py')
+    nav2_launch = os.path.join(
+        get_package_share_directory('mobile_robot'),
+        'launch', 'nav2_launch.py')
 
     return [
         Node(
@@ -159,5 +173,12 @@ def launch_setup(context):
             }.items(),
             condition=UnlessCondition(
                 EqualsSubstitution(LaunchConfiguration('slam'), 'off')),
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(nav2_launch),
+            launch_arguments={
+                'use_sim_time': LaunchConfiguration('use_sim_time'),
+            }.items(),
+            condition=IfCondition(LaunchConfiguration('nav')),
         ),
     ]

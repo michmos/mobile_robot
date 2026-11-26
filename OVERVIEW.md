@@ -11,7 +11,7 @@ This directory (`ros2_ws/src/mobile_robot/`) groups the packages below; it is no
   `Encoder.hpp` wraps the `ESP32Encoder` library (pinned `5.0.0`, the only non-core dependency): full quadrature (4x) decoding on the PCNT hardware counter with internal pull-ups and a 5 us glitch filter, so a glitch on one channel counts +1 and -1 and cancels instead of piling up in one direction (#69). `ticks_per_wheel_rev` (`ros2_control.xacro`) is therefore in 4x edges (~1964). The host tests use the library fake `mobile_robot_hardware/test/arduino_stub/ESP32Encoder.h`.
 - **`mobile_robot_hardware/`** — `ros2_control` hardware interface plugin; owns the serial link to the ESP32.
 - **`mobile_robot_controller/`** — `ros2_control` controller plugin (diff drive). The kinematics/odometry math lives in free functions in `include/mobile_robot_controller/kinematics.hpp`. Subscribes to the global `/cmd_vel` (`TwistStamped`, written by twist_mux), publishes `/odom` and the `odom` -> `base_link` transform on `/tf`.
-- **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` (plus the `slam:=mapping` override) and slam_toolbox configs, URDF/xacro description, the `hardware_watchdog` node and the `save_map` script.
+- **`mobile_robot_nodes/`** — the ROS package colcon actually builds (named `mobile_robot`): launch files, `controller_manager` (plus the `slam:=mapping` override), slam_toolbox and Nav2 configs, URDF/xacro description, the `hardware_watchdog` node and the `save_map` script.
 - **`pi_setup/`** — boot-time systemd/udev setup for running the stack on the Pi, see `pi_setup/README.md`. `start_robot.sh` clones/updates the `dev` branch, rebuilds on a new commit and launches; offline or on a failed update/build it launches the last installed build (#59).
 - **`lint/`** — linter setup shared by the three packages' `colcon test` (`lint.cmake`): C++ style via `ament_clang_format` with the repo's `.clang-format` instead of uncrustify, xmllint validating `package.xml` against a local schema copy so no network is needed, and cppcheck through ament_lint_auto with findings in each package's `test/` suppressed (gtest macros and the Arduino stub give cppcheck false positives; the files still show up as checked), with `AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS` set because ament_cppcheck otherwise skips every file with Ubuntu's cppcheck 2.x (#57).
 - **`dependencies.repos`** — source dependencies built next to this repo in `ros2_ws/src`, pinned to a commit: `xv_11_driver` from the fork `michmos/xv_11_driver` (builds on kilted; scans stamped from the end of the rotation, `stamp_mid_scan`, correct `scan_time`/`time_increment`, #85). Get them with `vcs import --input src/mobile_robot/dependencies.repos src` from `ros2_ws`; CI and `pi_setup/start_robot.sh` do the same.
@@ -33,6 +33,7 @@ The defaults are the robot setup; a dev machine (no ESP32, lidar or foxglove) ru
 - `use_lidar` (default `true`) — start `xv_11_driver` on `/dev/ttyAMA0`, with `stamp_mid_scan`: slam_toolbox places a whole scan at its stamp, and a rotation takes ~0.2 s, so the first-ray stamp misplaces scans while turning (#85).
 - `use_foxglove` (default `true`) — start `foxglove_bridge`.
 - `slam` (default `off`, or `mapping` / `localization`) — include `slam_launch.py` with `mode:=<slam>`, see "SLAM" below. `map`, `map_dir` and `use_sim_time` are passed through to it. `mapping` also loads `config/controller_slam_mapping.yaml` after `controller_manager.yaml`, which lowers the controller's velocity limits to 0.15 m/s / 0.4 rad/s (to be confirmed on the robot): slam_toolbox doesn't deskew a scan, so turning during the ~0.2 s rotation misplaces its late rays (#87).
+- `nav` (default `false`) — `true` includes `nav2_launch.py` (with `use_sim_time`), see "Navigation (Nav2)" below. Needs `slam:=mapping` or `slam:=localization`; `nav:=true slam:=off` fails at launch.
 
 The controllers are started by a single `spawner` (`joint_state_broadcaster`, then `mobile_robot_controller`) with `--service-call-timeout 5.0`. Don't split it into one spawner per controller: spawners run one after the other (shared lock file), and each one's first service call can lose its response and wait for the timeout, so the stalls add up (#52).
 
@@ -48,11 +49,11 @@ The controllers are started by a single `spawner` (`joint_state_broadcaster`, th
 - `map_dir` (default `$MAP_DIR`, else `~/maps`): a map `<name>` lives in `<map_dir>/<name>/`: `<name>.posegraph` + `<name>.data` (pose graph, for localization or to continue mapping) and `<name>.pgm` + `<name>.yaml` (occupancy grid for nav2's map_server).
 - The configs only list values that differ from slam_toolbox's defaults or are pinned, each with its reason (`base_frame: base_link`, `max_laser_range: 5.0` for the XV-11, nodes every 0.2 m / 0.2 rad, `/map` every 5 s, `map -> odom` at 20 Hz). `test_smoke.py` checks that both files agree on frames, resolution and range.
 - `ros2 run mobile_robot save_map <name> [--map-dir DIR]` (`mobile_robot/save_map.py`) calls `/slam_toolbox/serialize_map` and `/slam_toolbox/save_map` (which runs nav2's `map_saver_cli`). slam_toolbox writes the files, so run it on the machine slam_toolbox runs on.
-- RViz: `rviz2 -d $(ros2 pkg prefix mobile_robot)/share/mobile_robot/config/slam.rviz` (fixed frame `map`; Map, LaserScan, TF, RobotModel, the slam_toolbox panel and the "2D Pose Estimate" tool).
+- RViz: `rviz2 -d $(ros2 pkg prefix mobile_robot)/share/mobile_robot/config/mobile_robot.rviz` (fixed frame `map`; Map, LaserScan, TF, RobotModel, the slam_toolbox panel and the "2D Pose Estimate" tool).
 - Tests: `test_slam_launch.py` (launch arguments of both launch files and the mapping velocity limits, no node started), `test_map_storage.py` (map paths, `save_map` arguments), `test_slam.launch.py` (`slam_launch.py mode:=mapping` with a fake XV-11 `/scan` and static tf: `map -> odom`, `/map` and `save_map`).
 
 ### Mapping a room
-1. `ros2 launch mobile_robot mobile_robot_launch.py slam:=mapping map:=<name>` (on the robot, after `sudo systemctl stop mobile_robot`), RViz with `slam.rviz` on the laptop.
+1. `ros2 launch mobile_robot mobile_robot_launch.py slam:=mapping map:=<name>` (on the robot, after `sudo systemctl stop mobile_robot`), RViz with `mobile_robot.rviz` on the laptop.
 2. Drive slowly with the joystick, turn slowly (scan matching follows the 5 Hz lidar), keep walls in view. The controller caps the speed at 0.15 m/s / 0.4 rad/s in this mode, so the stick saturates before full deflection.
 3. Close loops: come back to where you started and through rooms you already mapped, so slam_toolbox can correct the drift. Check in RViz that walls are not doubled.
 4. Save while slam_toolbox still runs: `ros2 run mobile_robot save_map <name>`.
@@ -60,6 +61,33 @@ The controllers are started by a single `spawner` (`joint_state_broadcaster`, th
 ### Localization in a saved map
 1. `ros2 launch mobile_robot mobile_robot_launch.py slam:=localization map:=<name>`.
 2. slam_toolbox starts at the map origin, i.e. where mapping started. If the robot is elsewhere, set its pose in RViz with "2D Pose Estimate" (publishes `/initialpose`) and drive a bit until the scan lines up with the map.
+
+## Navigation (Nav2)
+Click a goal (or a list of waypoints) in RViz and the robot plans a path and drives there, avoiding what the lidar sees. Only config and launch work, no own nodes or plugins.
+- `mobile_robot_nodes/launch/nav2_launch.py` starts `controller_server`, `planner_server`, `behavior_server`, `bt_navigator`, `waypoint_follower` (separate processes, no composition) and one `lifecycle_manager_navigation` (autostart). Arguments: `use_sim_time`, `params_file` (default `config/nav2_params.yaml`). `mobile_robot_launch.py nav:=true` includes it; it also runs on its own on the laptop next to the robot launch (same as `slam_launch.py`; the clocks must be in sync, #65).
+- **Inputs:** `/map` and `map -> odom` from slam_toolbox (no AMCL, no map_server), `/odom` and `odom -> base_link` from `mobile_robot_controller`, `/scan` from `xv_11_driver`.
+- **Output:** `controller_server` and `behavior_server` publish `TwistStamped` on `/cmd_vel_nav` (remapped from `cmd_vel`), a twist_mux input with priority 10, below keyboard (90) and joystick (100): touching the joystick always overrides Nav2. twist_mux → `/cmd_vel` → `mobile_robot_controller`, which stays the only place that limits acceleration (no `velocity_smoother`).
+- **Config** (`config/nav2_params.yaml`, only values that differ from Nav2's kilted defaults or are pinned, each with its reason):
+  - Regulated Pure Pursuit at 20 Hz (period well below the controller's 0.5 s `cmd_vel_timeout`): 0.15 m/s, turns in place at 0.4 rad/s, `max_angular_accel` = the controller's 2.0 rad/s², forward only (it turns in place to face the path), collision detection on. Goal tolerance 0.10 m / 0.25 rad.
+  - `PoseProgressChecker`: turning in place counts as progress too (the default `SimpleProgressChecker` aborts while RPP turns towards a path behind it); a goal aborts only if the robot neither moves 0.2 m nor turns 0.5 rad within 10 s.
+  - NavFn with `allow_unknown`, global costmap with `track_unknown_space`: goals in unmapped space work while mapping.
+  - Circular footprint, `robot_radius` 0.13 m (chassis 0.20 × 0.15 m, wheels to ~0.216 m width). Global costmap: static layer (`/map`), obstacle layer (`/scan`), inflation. Local costmap: rolling 3 × 3 m in `odom`, obstacle + inflation layer, 5 Hz like the scan, obstacles up to 4.5 m, raytracing to 5 m. Both at the map's 0.05 m resolution.
+  - Speeds stay at or below the controller's lowest limits (the `slam:=mapping` override, 0.15 m/s / 0.4 rad/s, #87), so they hold in both slam modes. Accelerations of the spin/backup/drive_on_heading behaviors match `controller_manager.yaml`.
+  - `transform_tolerance` 0.5 s, for running Nav2 on the laptop.
+  - Default behavior tree (`navigate_to_pose_w_replanning_and_recovery.xml` from `nav2_bt_navigator`): replans at 1 Hz; recoveries clear costmaps, spin (≤ 0.4 rad/s), wait, back up 0.30 m at 0.15 m/s (the BT's own values).
+  - No `collision_monitor`: RPP's collision check and slowdown near obstacles, the joystick overrides via twist_mux.
+- **Dependencies:** the single `nav2_*` packages (see `mobile_robot_nodes/package.xml`, `pi_setup/README.md`), not `navigation2`/`nav2_bringup`. `nav2_rviz_plugins` only on the machine running RViz.
+- **RViz:** `mobile_robot.rviz` also shows the global and local costmap, the global plan (`/plan`), the part RPP follows (`/received_global_plan`), the footprint, the "Navigation 2" panel (incl. waypoint mode) and the "Nav2 Goal" tool.
+- Tests: `test_nav2_launch.py` (nodes, remappings and lifecycle list of `nav2_launch.py`, the `nav` argument incl. `nav:=true slam:=off` failing; no node started), `test_smoke.py` (frames match slam, speed/accel limits ≤ the controller's in every mode, controller period vs `cmd_vel_timeout`, progress checker vs the slowest speeds, twist_mux priority, `mobile_robot.rviz`), `test_nav2.launch.py` (mock hardware, fake XV-11 `/scan` from the robot's odom pose, `slam:=mapping nav:=true`: all Nav2 servers active, a `NavigateToPose` goal 0.5 m ahead commands `/cmd_vel_nav`, moves `/odom` and succeeds).
+
+### Navigating in a saved map
+1. `ros2 launch mobile_robot mobile_robot_launch.py slam:=localization map:=<name> nav:=true`, RViz with `mobile_robot.rviz` on the laptop.
+2. Set the pose with "2D Pose Estimate" if the robot is not where mapping started, check that the scan lines up with the map.
+3. "Nav2 Goal" in RViz, or several poses in the "Navigation 2" panel's waypoint mode and "Start Waypoint Following". The joystick takes over at any time; release it and Nav2 continues.
+
+### Navigating while mapping
+1. `ros2 launch mobile_robot mobile_robot_launch.py slam:=mapping map:=<name> nav:=true`.
+2. Set goals as above, also in unknown space: the planner plans through it and replans as the map grows. Save the map with `save_map` as usual.
 
 ## Serial protocol (pi ↔ ESP32)
 - Line based text protocol, defined in `esp32_firmware/inc/Messages.hpp`. The pi side lives in `mobile_robot_hardware/src/wire_protocol.cpp`; the config payload, its range check and the CRC are shared headers (`esp32_firmware/inc/ConfigPayload.hpp`, `Crc16.hpp`).

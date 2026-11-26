@@ -4,34 +4,16 @@ Smoke tests for slam_launch.py and the slam argument of mobile_robot_launch.py.
 Only the launch descriptions are built, no node is started.
 """
 
-import importlib.util
 import os
-import tempfile
 
-from launch import LaunchContext
-from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
-                            OpaqueFunction)
+from launch.actions import IncludeLaunchDescription
 from launch.utilities import perform_substitutions
+from launch_helpers import (CONFIG_DIR, declared_defaults, load_module,
+                            load_robot_launch, node_name, node_params,
+                            PACKAGE_DIR, run)
 from launch_ros.actions import LifecycleNode, Node
-from launch_ros.utilities import evaluate_parameters
 import pytest
 import yaml
-
-PACKAGE_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), os.pardir)
-LAUNCH_DIR = os.path.join(PACKAGE_DIR, 'launch')
-CONFIG_DIR = os.path.join(PACKAGE_DIR, 'config')
-
-
-def load_module(name, monkeypatch):
-    spec = importlib.util.spec_from_file_location(
-        name[:-3], os.path.join(LAUNCH_DIR, name))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    # read config/ from the source tree, not the install space
-    monkeypatch.setattr(module, 'get_package_share_directory',
-                        lambda package: PACKAGE_DIR)
-    return module
 
 
 @pytest.fixture
@@ -42,57 +24,13 @@ def slam_launch(monkeypatch):
 
 @pytest.fixture
 def robot_launch(tmp_path, monkeypatch):
-    monkeypatch.delenv('MAP_DIR', raising=False)
-    # the launch file writes the kinematics params to the system temp dir
-    monkeypatch.setattr(tempfile, 'tempdir', str(tmp_path))
-    return load_module('mobile_robot_launch.py', monkeypatch)
-
-
-def declared_arguments(module):
-    return [a for a in module.generate_launch_description().entities
-            if isinstance(a, DeclareLaunchArgument)]
-
-
-def declared_defaults(module):
-    return {a.name: perform_substitutions(LaunchContext(), a.default_value)
-            for a in declared_arguments(module)}
-
-
-def run(module, **configurations):
-    """Actions the launch file starts for the given launch arguments."""
-    context = LaunchContext()
-    context.launch_configurations.update(declared_defaults(module))
-    context.launch_configurations.update(configurations)
-    # validates the values against the declared choices
-    for argument in declared_arguments(module):
-        argument.execute(context)
-    setup = next(a for a in module.generate_launch_description().entities
-                 if isinstance(a, OpaqueFunction))
-    return context, [a for a in setup.execute(context)
-                     if a.condition is None or a.condition.evaluate(context)]
+    return load_robot_launch(tmp_path, monkeypatch)
 
 
 def slam_node(actions):
     nodes = [a for a in actions if isinstance(a, LifecycleNode)]
     assert len(nodes) == 1
     return nodes[0]
-
-
-# launch_ros has no public getters for these before the node is executed
-
-def node_parameters(context, node):
-    """Parameter files and the merged dict parameters of a node."""
-    files, values = [], {}
-    for parameter in evaluate_parameters(context, node._Node__parameters):
-        if isinstance(parameter, dict):
-            values.update(parameter)
-        else:
-            files.append(str(parameter))
-    return files, values
-
-
-def node_name(node):
-    return node._Node__node_name
 
 
 def make_map(map_dir, name):
@@ -122,7 +60,7 @@ def test_slam_launch_map_dir_defaults_to_env(slam_launch, monkeypatch):
 def test_mapping_starts_async_node_with_mapping_config(slam_launch):
     context, actions = run(slam_launch, mode='mapping')
     node = slam_node(actions)
-    files, values = node_parameters(context, node)
+    files, values = node_params(context, node)
 
     assert node.node_package == 'slam_toolbox'
     assert node.node_executable == 'async_slam_toolbox_node'
@@ -139,7 +77,7 @@ def test_mapping_with_map_name_still_starts_a_new_map(slam_launch, tmp_path):
                            map_dir=str(tmp_path))
 
     assert 'map_file_name' not in \
-        node_parameters(context, slam_node(actions))[1]
+        node_params(context, slam_node(actions))[1]
 
 
 def test_localization_loads_pose_graph_of_map(slam_launch, tmp_path):
@@ -148,7 +86,7 @@ def test_localization_loads_pose_graph_of_map(slam_launch, tmp_path):
     context, actions = run(slam_launch, mode='localization', map='kitchen',
                            map_dir=str(tmp_path))
     node = slam_node(actions)
-    files, values = node_parameters(context, node)
+    files, values = node_params(context, node)
 
     assert node.node_executable == 'localization_slam_toolbox_node'
     assert files == [os.path.join(CONFIG_DIR, 'slam_localization.yaml')]
@@ -170,7 +108,7 @@ def test_slam_node_is_activated_by_the_launch(slam_launch, tmp_path, mode):
 def test_use_sim_time_is_passed_to_slam_toolbox(slam_launch):
     context, actions = run(slam_launch, use_sim_time='true')
 
-    assert node_parameters(context, slam_node(actions))[1][
+    assert node_params(context, slam_node(actions))[1][
         'use_sim_time'] is True
 
 
@@ -267,7 +205,7 @@ def controller_parameters(context, actions):
     node = next(a for a in actions if isinstance(a, Node)
                 and a.node_executable == 'ros2_control_node')
     merged = {}
-    for file in node_parameters(context, node)[0]:
+    for file in node_params(context, node)[0]:
         with open(file) as f:
             content = yaml.safe_load(f) or {}
         for name in ('mobile_robot_controller', '/mobile_robot_controller'):

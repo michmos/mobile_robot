@@ -5,6 +5,9 @@ Panels:
     Name: Views
   - Class: slam_toolbox::SlamToolboxPlugin
     Name: SlamToolboxPlugin
+  # Nav2 goals, "Waypoint / Nav Through Poses Mode" for waypoint following
+  - Class: nav2_rviz_plugins/Navigation 2
+    Name: Navigation 2
 Visualization Manager:
   Class: ""
   Displays:
@@ -68,6 +71,67 @@ Visualization Manager:
         Reliability Policy: Best Effort
         Value: /scan
       Value: true
+    # Nav2 (nav:=true); costmaps and plans can be toggled off while mapping
+    - Class: rviz_default_plugins/Map
+      Name: Global Costmap
+      Enabled: true
+      Alpha: 0.3
+      Color Scheme: costmap
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /global_costmap/costmap
+      Value: true
+    - Class: rviz_default_plugins/Map
+      Name: Local Costmap
+      Enabled: true
+      Alpha: 0.5
+      Color Scheme: costmap
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_costmap/costmap
+      Value: true
+    - Class: rviz_default_plugins/Path
+      Name: Global Plan
+      Enabled: true
+      Color: 0; 160; 255
+      Line Style: Lines
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /plan
+      Value: true
+    # the part of the global plan RPP follows, in odom
+    - Class: rviz_default_plugins/Path
+      Name: Local Plan
+      Enabled: true
+      Color: 0; 255; 0
+      Line Style: Lines
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /received_global_plan
+      Value: true
+    - Class: rviz_default_plugins/Polygon
+      Name: Footprint
+      Enabled: true
+      Color: 255; 255; 0
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /local_costmap/published_footprint
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -92,6 +156,8 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /initialpose
+    # "Nav2 Goal", sends a NavigateToPose goal through the Navigation 2 panel
+    - Class: nav2_rviz_plugins/GoalTool
   Transformation:
     Current:
       Class: rviz_default_plugins/TF

@@ -47,11 +47,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ros-kilted-twist-mux \
       ros-kilted-foxglove-bridge \
       ros-kilted-slam-toolbox \
+      ros-kilted-nav2-controller \
+      ros-kilted-nav2-planner \
+      ros-kilted-nav2-behaviors \
+      ros-kilted-nav2-bt-navigator \
+      ros-kilted-nav2-waypoint-follower \
+      ros-kilted-nav2-lifecycle-manager \
+      ros-kilted-nav2-costmap-2d \
+      ros-kilted-nav2-navfn-planner \
+      ros-kilted-nav2-regulated-pure-pursuit-controller \
+      ros-kilted-nav2-rviz-plugins \
     && rm -rf /var/lib/apt/lists/*
 # ^ joy/teleop_twist_joy: used by mobile_robot_nodes/launch/joystick_launch.py
 #   but not declared in package.xml, desktop shipped them.
 # ^ slam_toolbox: SLAM mapping and localization, pulls in nav2_map_server
 #   for saving maps.
+# ^ nav2_*: the Nav2 servers nav2_launch.py starts plus the RPP and NavFn
+#   plugins, instead of the navigation2 metapackage. nav2_rviz_plugins is
+#   only for mobile_robot.rviz on the laptop.
 
 # compile check for the esp32 firmware (esp32_firmware/), not used at runtime
 # The esp32:esp32 core is pinned to an exact version (ESP32_CORE_VERSION) so
