@@ -1,0 +1,18 @@
+# Runs the Fast DDS discovery server that the robot and the laptop register with.
+# Separate from mobile_robot.service so it keeps running across robot restarts.
+
+[Unit]
+Description=Fast DDS discovery server for ROS 2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mypi
+EnvironmentFile=/home/mypi/ros_env
+ExecStart=/bin/bash -c 'source /opt/ros/kilted/setup.bash && exec fastdds discovery -l 0.0.0.0 -p 11811'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

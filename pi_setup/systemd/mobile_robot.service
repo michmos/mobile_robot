@@ -3,8 +3,8 @@
 
 [Unit]
 Description=Setup ros2 and launch mobile_robot
-After=network-online.target
-Wants=network-online.target
+After=network-online.target ros_discovery_server.service
+Wants=network-online.target ros_discovery_server.service
 # Defines how often we can fail in a given time before
 # we abort
 StartLimitIntervalSec=90
@@ -13,6 +13,7 @@ StartLimitBurst=5
 [Service]
 Type=simple
 User=mypi
+EnvironmentFile=/home/mypi/ros_env
 ExecStart=/home/mypi/start_robot.sh
 # ros2 launch exits with code 0 after a shutdown, so on-failure would not restart
 Restart=always
